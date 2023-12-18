@@ -289,6 +289,8 @@ acp_vulkan::renderer_context* acp_vulkan::renderer_init(uint32_t width, uint32_t
 	out->user_context = user_context;
 	out->depth_state = use_depth;
 	out->vsync_state = use_vsync;
+	out->width = width;
+	out->height = height;
 
 	if (!create_instance(out))
 		goto ERROR;
@@ -354,7 +356,10 @@ ERROR:
 bool acp_vulkan::renderer_resize(acp_vulkan::renderer_context* context, uint32_t width, uint32_t height)
 {
 	acp_vulkan::renderer_context::user_context_data::resize_context resize_context = context->user_context.renderer_resize(context, width, height);
-	if (resize_context.width == resize_context.height == resize_context.use_depth == resize_context.use_vsync == 0)
+	if (resize_context.width == 0 && 
+		resize_context.height == 0 && 
+		resize_context.use_depth == false && 
+		resize_context.use_vsync == false)
 		return false;
 
 	if (swapchian_update(context->swapchain, context, resize_context.width, resize_context.height, resize_context.use_vsync, resize_context.use_depth))

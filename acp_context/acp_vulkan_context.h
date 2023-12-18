@@ -48,12 +48,12 @@ namespace acp_vulkan
 			void* user_data{ nullptr };
 			struct resize_context
 			{
-				uint32_t width{ 0 };
-				uint32_t height{ 0 };
-				bool use_vsync{ false };
-				bool use_depth{ false };
+				const uint32_t width{ 0 };
+				const uint32_t height{ 0 };
+				const bool use_vsync{ false };
+				const bool use_depth{ false };
 			};
-			resize_context(*renderer_resize)(renderer_context* context, uint32_t new_width, uint32_t new_height);
+			const resize_context(*renderer_resize)(renderer_context* context, uint32_t new_width, uint32_t new_height);
 			bool (*renderer_update)(renderer_context* context, double delta_time_in_seconds);
 			bool (*renderer_init)(renderer_context* context);
 			void (*renderer_shutdown)(renderer_context* context);
