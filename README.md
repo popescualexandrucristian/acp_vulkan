@@ -160,3 +160,10 @@ Note:
 * A build system is not provided as one is not necessary, just include the .cpp and the .h files.
 * Might move to a header only mode in the future.
 * I am a fan of Ortodox C++ so please don't create pull requests with things that are not necessary such as encapsulation directives, proper classes or other c++ 'features'.
+
+###acp_context/*
+
+Boilerplate far initializeing the vulakn context, swapchain and depth buffers + utils for standard primitives.
+
+Note:
+	* This system uses the new dynamic render pass instance as I am a frame-buffer/render pass hater.
