@@ -257,7 +257,7 @@ typedef struct dds_file_data {
 	uint32_t			dwCaps3;
 	uint32_t			dwCaps4;
 	uint32_t			dwReserved2;
-	DDS_HEADER_DXT10* ddsHeaderDx10;
+	DDS_HEADER_DXT10*   ddsHeaderDx10;
 	uint32_t			dwFileSize;
 	uint32_t			dwBufferSize;
 	unsigned char* blBuffer;
@@ -795,12 +795,14 @@ struct dds_file
 };
 
 
-void dds_free(dds_file_data* file) {
-    delete file->ddsHeaderDx10;
-    delete[] file->blBuffer;
+void dds_free(dds_file_data* file, VkAllocationCallbacks* host_allocator) {
+    if (host_allocator)
+        host_allocator->pfnFree(host_allocator->pUserData, file->blBuffer);
+    else
+        delete[] file->blBuffer;
 }
 
-dds_file dds_load(const char* data, size_t data_size)
+dds_file dds_load(unsigned char* data, size_t data_size, bool will_own_data, VkAllocationCallbacks* host_allocator)
 {
     size_t used_data_size = 0;
     unsigned char filesig[4]{};
@@ -826,17 +828,12 @@ dds_file dds_load(const char* data, size_t data_size)
     data += 124;
     used_data_size += 124;
 
+    DDS_HEADER_DXT10 dds10_header = {};
     isDx10 = memcmp(&file.ddspf.dwFourCC, "DX10", 4) == 0 ? 1 : 0;
     if (isDx10) {
 
         if (data_size - used_data_size < sizeof(DDS_HEADER_DXT10))
             return {};
-
-        file.ddsHeaderDx10 = new DDS_HEADER_DXT10();
-        if (file.ddsHeaderDx10 == 0) {
-            dds_free(&file);
-            return {};
-        }
 
         memcpy(file.ddsHeaderDx10, data, sizeof(DDS_HEADER_DXT10));
         data += sizeof(DDS_HEADER_DXT10);
@@ -846,18 +843,28 @@ dds_file dds_load(const char* data, size_t data_size)
     file.dwFileSize = data_size;
     file.dwBufferSize = ((data_size - 124) - 4) - (isDx10 ? sizeof(DDS_HEADER_DXT10) : 0);
 
-    file.blBuffer = new unsigned char[file.dwBufferSize]();
-    if (file.blBuffer == 0) {
-        dds_free(&file);
+    if (will_own_data)
+    {
+        if (host_allocator)
+            file.blBuffer = reinterpret_cast<unsigned char*>(host_allocator->pfnAllocation(host_allocator->pUserData, file.dwBufferSize, 1, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT));
+        else
+            file.blBuffer = new unsigned char[file.dwBufferSize]();
+    }
+    else
+        file.blBuffer = data;
+
+    if ((file.blBuffer == 0) && will_own_data) {
+        dds_free(&file, host_allocator);
         return {};
     }
 
-    if (data_size - used_data_size < file.dwBufferSize)
+    if ((data_size - used_data_size < file.dwBufferSize) && will_own_data)
     {
-        dds_free(&file);
+        dds_free(&file, host_allocator);
         return {};
     }
-    memcpy(file.blBuffer, data, file.dwBufferSize);
+    if (will_own_data)
+        memcpy(file.blBuffer, data, file.dwBufferSize);
     data += file.dwBufferSize;
     used_data_size += file.dwBufferSize;
 
@@ -963,12 +970,13 @@ void get_surface_info
 }
 
 
-acp_vulkan::dds_data acp_vulkan::dds_data_from_memory(void* data, size_t data_size)
+acp_vulkan::dds_data acp_vulkan::dds_data_from_memory(void* data, size_t data_size, bool will_own_data, VkAllocationCallbacks* host_allocator)
 {
-    dds_file dds_file = dds_load(reinterpret_cast<const char*>(data), data_size);
+    dds_file dds_file = dds_load(reinterpret_cast<unsigned char*>(data), data_size, will_own_data, host_allocator);
     if (!dds_file.is_valid)
     {
-        dds_free(&dds_file.data);
+        if (will_own_data)
+            dds_free(&dds_file.data, host_allocator);
         return {};
     }
 
@@ -978,31 +986,36 @@ acp_vulkan::dds_data acp_vulkan::dds_data_from_memory(void* data, size_t data_si
 
     if (image_info.format == VK_FORMAT_UNDEFINED)
     {
-        dds_free(&dds_file.data);
+        if (will_own_data)
+            dds_free(&dds_file.data, host_allocator);
         return {};
     }
 
-    if (image_info.mipLevels > 15)
+    if (image_info.mipLevels > MAX_NUMBER_OF_MIPS)
     {
-        dds_free(&dds_file.data);
+        if (will_own_data)
+            dds_free(&dds_file.data, host_allocator);
         return {};
     }
 
-    if (image_info.imageType == VK_IMAGE_TYPE_1D && (image_info.extent.width > 16384 || image_info.arrayLayers > 2048))
+    if ((image_info.imageType & VK_IMAGE_TYPE_1D) && (image_info.extent.width > 16384 || image_info.arrayLayers > 2048))
     {
-        dds_free(&dds_file.data);
+        if (will_own_data)
+            dds_free(&dds_file.data, host_allocator);
         return {};
     }
 
-    if (image_info.imageType == VK_IMAGE_TYPE_2D && (image_info.extent.width > 16384 || image_info.extent.height > 16384 || image_info.arrayLayers > 2048))
+    if ((image_info.imageType & VK_IMAGE_TYPE_2D) && (image_info.extent.width > 16384 || image_info.extent.height > 16384 || image_info.arrayLayers > 2048))
     {
-        dds_free(&dds_file.data);
+        if (will_own_data)
+            dds_free(&dds_file.data, host_allocator);
         return {};
     }
 
-    if (image_info.imageType == VK_IMAGE_TYPE_2D && (image_info.extent.width > 16384 || image_info.extent.height > 16384 || image_info.extent.depth > 16384 || image_info.arrayLayers > 1))
+    if ((image_info.imageType & VK_IMAGE_TYPE_3D) && (image_info.extent.width > 16384 || image_info.extent.height > 16384 || image_info.extent.depth > 16384 || image_info.arrayLayers > 1))
     {
-        dds_free(&dds_file.data);
+        if (will_own_data)
+            dds_free(&dds_file.data, host_allocator);
         return {};
     }
 
@@ -1024,6 +1037,7 @@ acp_vulkan::dds_data acp_vulkan::dds_data_from_memory(void* data, size_t data_si
     out.num_rows = num_rows;
     out.num_mips = 0;
     out.dss_buffer_data = dds_file.data.blBuffer;
+    out.full_data = will_own_data ? dds_file.data.blBuffer : nullptr;
 
     for (size_t j = 0; j < image_info.arrayLayers; j++)
     {
@@ -1041,7 +1055,8 @@ acp_vulkan::dds_data acp_vulkan::dds_data_from_memory(void* data, size_t data_si
 
             if (src_bits + (num_bytes * d) > end_bits)
             {
-                dds_free(&dds_file.data);
+                if (will_own_data)
+                    dds_free(&dds_file.data, host_allocator);
                 return {};
             }
 
@@ -1064,28 +1079,62 @@ acp_vulkan::dds_data acp_vulkan::dds_data_from_memory(void* data, size_t data_si
             }
         }
     }
-
-    if (dds_file.data.ddsHeaderDx10)
-        delete dds_file.data.ddsHeaderDx10;
     
     return out;
 }
 
-acp_vulkan::dds_data acp_vulkan::dds_data_from_file(const char* path)
+acp_vulkan::dds_data acp_vulkan::dds_data_from_file(const char* path, VkAllocationCallbacks* host_allocator)
 {
     FILE* dds_bytes = fopen(path, "rb");
+    if (!dds_bytes)
+        return {};
+
     fseek(dds_bytes, 0, SEEK_END);
     long dds_size = ftell(dds_bytes);
     fseek(dds_bytes, 0, SEEK_SET);
-    char* dds_data = new char[dds_size];
-    fread(dds_data, 1, dds_size, dds_bytes);
+
+    unsigned char* dds_data = host_allocator ? 
+        reinterpret_cast<unsigned char*>(host_allocator->pfnAllocation(host_allocator->pUserData, dds_size, 1, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT)) 
+        : new unsigned char[dds_size];
+
+    if (!dds_data)
+    {
+        fclose(dds_bytes);
+        return {};
+    }
+    
+    size_t bytes_to_read = dds_size;
+    size_t offset = 0;
+    while (size_t bytes_read = fread(dds_data + offset, 1, bytes_to_read, dds_bytes))
+    {
+        offset += bytes_read;
+        bytes_to_read -= bytes_read;
+    }
+
     fclose(dds_bytes);
-    acp_vulkan::dds_data out = dds_data_from_memory(dds_data, dds_size);
-    delete dds_data;
+
+    if (dds_size < offset)
+    {
+        if (host_allocator)
+            host_allocator->pfnFree(host_allocator->pUserData, dds_data);
+        else
+            delete[] dds_data;
+
+        return {};
+    }
+
+    acp_vulkan::dds_data out = dds_data_from_memory(dds_data, dds_size, false, nullptr);
+    out.full_data = dds_bytes; // The dds_data will own the memory and it will be removed on dds_data_free.
     return out;
 }
 
-void acp_vulkan::dds_data_free(dds_data* dds_data)
+void acp_vulkan::dds_data_free(dds_data* dds_data, VkAllocationCallbacks* host_allocator)
 {
-    delete[] dds_data->dss_buffer_data;
+    if (host_allocator)
+    {
+        host_allocator->pfnFree(host_allocator->pUserData, dds_data);
+        return;
+    }
+    if (dds_data->full_data)
+        delete[] dds_data->full_data;
 }

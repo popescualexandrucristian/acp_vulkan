@@ -1,5 +1,5 @@
 # acp_vulkan
-#### version: 0.1
+#### version: 0.2
 ---
 Utility tools that help with some of the Vulkan's boilerplate.
 
@@ -132,18 +132,26 @@ struct image_mip_data
 
 Load DDS data from file or from memory.
 Note :
+ * Parameters:
+	* data - bytes that point to DDS data includeing the headers.
+	* data_size - size of data.
+	* will_own_data - the call will allocate a copy of the data and dds_data_free will have to be called to free that memory.
+	* host_allocator - standard Vulkan allocator, if null, the default allocator will be used. Allocations are made on the heap only if will_own_data is true.
+	* the file version of the call always owns the memory.
  * Limitations:
 	 * Does not support paletted versions of DDS.
 	 * Does not support/was not tested with the new versions of files.
 
 ```
-	dds_data dds_data_from_memory(void* data, size_t data_size);
+	dds_data dds_data_from_memory(void* data, size_t data_size, bool will_own_data, VkAllocationCallbacks* host_allocator);
 	
-	dds_data dds_data_from_file(const char* path);
+	dds_data dds_data_from_file(const char* path, VkAllocationCallbacks* host_allocator);
 ```
 Free DDS data.
+Note :
+	* Only needs to be called if the dds_data owns the memory.
 ```
-	void dds_data_free(dds_data* dds_data);
+	void dds_data_free(dds_data* dds_data, VkAllocationCallbacks* host_allocator);
 ```
 Note:
 * This lib is in it's initial form and it will take some time until it is battle ready.
