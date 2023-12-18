@@ -56,7 +56,7 @@ namespace acp_vulkan
 			resize_context(*renderer_resize)(renderer_context* context, uint32_t new_width, uint32_t new_height);
 			bool (*renderer_update)(renderer_context* context, double delta_time_in_seconds);
 			bool (*renderer_init)(renderer_context* context);
-			bool (*renderer_shutdown)(renderer_context* context);
+			void (*renderer_shutdown)(renderer_context* context);
 		} user_context;
 	};
 

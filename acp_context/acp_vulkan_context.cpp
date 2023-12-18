@@ -354,6 +354,8 @@ ERROR:
 bool acp_vulkan::renderer_resize(acp_vulkan::renderer_context* context, uint32_t width, uint32_t height)
 {
 	acp_vulkan::renderer_context::user_context_data::resize_context resize_context = context->user_context.renderer_resize(context, width, height);
+	if (resize_context.width == resize_context.height == resize_context.use_depth == resize_context.use_vsync == 0)
+		return false;
 
 	if (swapchian_update(context->swapchain, context, resize_context.width, resize_context.height, resize_context.use_vsync, resize_context.use_depth))
 	{
