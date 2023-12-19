@@ -121,9 +121,6 @@ struct image_mip_data
 	    VkImageCreateInfo image_create_info; 
 	    size_t width{ 0 };
 	    size_t height{ 0 };
-	    size_t num_bytes{ 0 };
-	    size_t row_bytes{ 0 };
-	    size_t num_rows{ 0 };
 	    image_mip_data image_mip_data[16] = {};
 	    size_t num_mips{ 0 };
 	    unsigned char* dss_buffer_data{ nullptr };
