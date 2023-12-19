@@ -62,23 +62,23 @@ Note :
  * This system uses the new dynamic render pass instance as I am a frame-buffer/render pass hater.
  * Uses dynamic states for view-ports and scissors.
  * Limitations:
-	 * Does not consider multiple resources for a binding yet.
 	 * It uses c++ primitives, will the host_allocator for everything in the future.
 	 * Only for the standard graphics pipelines for now.
 	 * Only for VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST for now, will add others later.
 	 * More depth options should be added.
 	 * Blending options should be added.
 	 * AA options should be added.
-	 * Pipeline caches should be added. 
+	 * Pipeline caches should be added.
+  	 * Layout cache shoul be added. (probably the last 2 should be one object or something idk) 
 ```
 //If vertex streams are used we need some extra information that can't be deduced from shaders.
 //This info comes in a list of input_attribute_data
 struct input_attribute_data
 {
-    uint32_t				binding;
+    uint32_t			binding;
     std::vector<uint32_t>	offsets;
     std::vector<uint32_t>	locations;
-    uint32_t				stride;
+    uint32_t			stride;
     VkVertexInputRate		input_rate;
 };
 
@@ -158,7 +158,7 @@ Note:
 * Might move to a header only mode in the future.
 * I am a fan of Ortodox C++ so please don't create pull requests with things that are not necessary such as encapsulation directives, proper classes or other c++ 'features'.
 
-###acp_context/*
+### acp_context/*
 
 Boilerplate far initializeing the vulakn context, swapchain and depth buffers + utils for standard primitives.
 
