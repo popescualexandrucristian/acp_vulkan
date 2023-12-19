@@ -19,6 +19,9 @@
 
 static bool register_debug_callback(acp_vulkan::renderer_context* context)
 {
+	if (!context->debug_callback)
+		return false;
+
 	VkDebugReportCallbackCreateInfoEXT create_info = { VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT };
 	create_info.flags = VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT | VK_DEBUG_REPORT_ERROR_BIT_EXT;
 	create_info.pfnCallback = context->debug_callback;
@@ -39,7 +42,7 @@ static void unregister_debug_callback(acp_vulkan::renderer_context* context)
 	context->callback_extension = VK_NULL_HANDLE;
 }
 
-static bool create_instance(acp_vulkan::renderer_context* context)
+static bool create_instance(acp_vulkan::renderer_context* context, bool use_validation, bool use_synchronization_validation)
 {
 	VkInstanceCreateInfo instance_create_info{ VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 	VkApplicationInfo application_info{ VK_STRUCTURE_TYPE_APPLICATION_INFO };
@@ -50,26 +53,56 @@ static bool create_instance(acp_vulkan::renderer_context* context)
 	application_info.pEngineName = PROJECT_NAME " " PROJECT_VERSION;
 	instance_create_info.pApplicationInfo = &application_info;
 
-	instance_create_info.ppEnabledLayerNames = get_renderer_debug_layers();
-	instance_create_info.enabledLayerCount = uint32_t(get_renderer_debug_layers_count());
-
-#if ENABLE_DEBUG_CONSOLE
-	VkValidationFeatureEnableEXT enabledValidationFeatures[] =
+	uint32_t debug_layer_count = 0;
+	const char** debug_layers = acp_vulkan_os_specific_get_renderer_debug_layers();
+	if (debug_layers)
 	{
-		VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-#if ENABLE_VULKAN_VALIDATION_SYNCHRONIZATION_LAYER
-		VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-#endif
-	};
+		instance_create_info.ppEnabledLayerNames = debug_layers;
+		while (debug_layers != nullptr && *debug_layers)
+		{
+			++debug_layers;
+			++debug_layer_count;
+		}
+
+		instance_create_info.enabledLayerCount = debug_layer_count;
+	}
 
 	VkValidationFeaturesEXT validationFeatures = { VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT };
-	validationFeatures.enabledValidationFeatureCount = sizeof(enabledValidationFeatures) / sizeof(enabledValidationFeatures[0]);
-	validationFeatures.pEnabledValidationFeatures = enabledValidationFeatures;
+	VkValidationFeatureEnableEXT validationFeaturesAndSyncExt[] =
+	{
+		VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
+		VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+	};
+	VkValidationFeatureEnableEXT validationFeaturesExt[] =
+	{
+		VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT
+	};
+	
+	if (use_validation)
+	{
+		if (use_synchronization_validation)
+		{
+			validationFeatures.enabledValidationFeatureCount = 2;
+			validationFeatures.pEnabledValidationFeatures = validationFeaturesAndSyncExt;
+		}
+		else
+		{
+			validationFeatures.enabledValidationFeatureCount = 1;
+			validationFeatures.pEnabledValidationFeatures = validationFeaturesExt;
+		}
+		
+		instance_create_info.pNext = &validationFeatures;
+	}
 
-	instance_create_info.pNext = &validationFeatures;
-#endif
-	instance_create_info.ppEnabledExtensionNames = get_renderer_extensions();
-	instance_create_info.enabledExtensionCount = uint32_t(get_renderer_extensions_count());
+	const char** renderer_extensions = acp_vulkan_os_specific_get_renderer_extensions();
+	instance_create_info.ppEnabledExtensionNames = renderer_extensions;
+	uint32_t renderer_extensions_count = 0;
+	while (renderer_extensions != nullptr && *renderer_extensions)
+	{
+		++renderer_extensions;
+		++renderer_extensions_count;
+	}
+	instance_create_info.enabledExtensionCount = renderer_extensions_count;
 
 	ACP_VK_CHECK(vkCreateInstance(&instance_create_info, context->host_allocator, &context->instance), context);
 
@@ -107,7 +140,7 @@ static bool pick_physical_device(acp_vulkan::renderer_context* context, VkPhysic
 		if (family_index == VK_QUEUE_FAMILY_IGNORED)
 			continue;
 
-		if (!get_renderer_device_supports_presentation(physical_devices[i], family_index))
+		if (!acp_vulkan_os_specific_get_renderer_device_supports_presentation(physical_devices[i], family_index))
 			continue;
 
 		if (props.apiVersion < VK_API_VERSION_1_3)
@@ -134,8 +167,6 @@ static bool pick_physical_device(acp_vulkan::renderer_context* context, VkPhysic
 
 	VkPhysicalDeviceProperties props;
 	vkGetPhysicalDeviceProperties(context->physical_device, &props);
-	LOG_INFO("device : %s type : %s", props.deviceName, props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? "DISCRETE" : "OTHER");
-
 	return true;
 }
 
@@ -282,23 +313,24 @@ static void destroy_frame_sync_data(acp_vulkan::renderer_context* context)
 	context->frame_syncs.clear();
 }
 
-acp_vulkan::renderer_context* acp_vulkan::renderer_init(uint32_t width, uint32_t height, bool use_vsync, bool use_depth, acp_vulkan::renderer_context::user_context_data user_context)
+acp_vulkan::renderer_context* acp_vulkan::renderer_init(const renderer_init_context& init_context)
 {
 	acp_vulkan::renderer_context* out = new acp_vulkan::renderer_context();
-	out->debug_callback = get_renderer_debug_callback();
-	out->user_context = user_context;
-	out->depth_state = use_depth;
-	out->vsync_state = use_vsync;
-	out->width = width;
-	out->height = height;
+	out->debug_callback = acp_vulkan_os_specific_get_log_callback();
+	out->user_context = init_context.user_context;
+	out->depth_state = init_context.use_depth;
+	out->vsync_state = init_context.use_vsync;
+	out->width = init_context.width;
+	out->height = init_context.height;
 
-	if (!create_instance(out))
+	if (!create_instance(out, init_context.use_validation, init_context.use_synchronization_validation))
 		goto ERROR;
 
-#if defined( ENABLE_DEBUG_CONSOLE) && defined(ENABLE_VULKAN_VALIDATION_LAYERS)
-	if (!register_debug_callback(out))
-		goto ERROR;
-#endif
+	if (out->debug_callback && init_context.use_validation)
+	{
+		if (!register_debug_callback(out))
+			goto ERROR;
+	}
 
 	if (!select_physical_device(out))
 		goto ERROR;
@@ -308,7 +340,7 @@ acp_vulkan::renderer_context* acp_vulkan::renderer_init(uint32_t width, uint32_t
 
 	vkGetDeviceQueue(out->logical_device, out->graphics_family_index, 0, &out->graphics_queue);
 
-	out->surface = create_renderer_surface(out->instance);
+	out->surface = acp_vulkan_os_specific_create_renderer_surface(out->instance);
 	if (out->surface == VK_NULL_HANDLE)
 		goto ERROR;
 
@@ -332,7 +364,7 @@ acp_vulkan::renderer_context* acp_vulkan::renderer_init(uint32_t width, uint32_t
 		ACP_VK_CHECK(vmaCreateAllocator(&info, &out->gpu_allocator), out);
 	}
 
-	out->swapchain = swapchain_init(out, width, height, use_vsync, use_depth);
+	out->swapchain = swapchain_init(out, out->width, out->height, out->vsync_state, out->depth_state);
 	if (!out->swapchain)
 		goto ERROR;
 
@@ -365,6 +397,8 @@ bool acp_vulkan::renderer_resize(acp_vulkan::renderer_context* context, uint32_t
 	if (swapchian_update(context->swapchain, context, resize_context.width, resize_context.height, resize_context.use_vsync, resize_context.use_depth))
 	{
 		assert(context->swapchain->images.size() == context->frame_syncs.size());
+		context->current_frame = 0;
+		context->next_image_index = 0;
 		return true;
 	}
 	return false;
@@ -372,7 +406,113 @@ bool acp_vulkan::renderer_resize(acp_vulkan::renderer_context* context, uint32_t
 
 bool acp_vulkan::renderer_update(acp_vulkan::renderer_context* context, double delta_time)
 {
-	return context->user_context.renderer_update(context, delta_time);
+	size_t current_frame = context->current_frame % context->max_frames;
+	acp_vulkan::frame_sync& sync = context->frame_syncs[current_frame];
+
+	//aquire free image
+	ACP_VK_CHECK(vkWaitForFences(context->logical_device, 1, &sync.render_fence, true, 1000000000), context);
+	ACP_VK_CHECK(vkResetFences(context->logical_device, 1, &sync.render_fence), context);
+
+	context->next_image_index = acp_vulkan::acquire_next_image(context->swapchain, context, VK_NULL_HANDLE, sync.present_semaphore);
+
+	VkRenderingAttachmentInfo color_attachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+	color_attachment.imageView = context->swapchain->views[context->next_image_index];
+	color_attachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+	color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+	VkRenderingAttachmentInfo depth_attachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+	if (context->depth_state)
+	{
+		depth_attachment.imageView = context->swapchain->depth_views[context->next_image_index];
+		depth_attachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	}
+
+	return context->user_context.renderer_update(context, current_frame, color_attachment, depth_attachment, delta_time);
+}
+
+void acp_vulkan::renderer_start_main_pass(VkCommandBuffer command_buffer, renderer_context* context, VkRenderingAttachmentInfo color_attachment, VkRenderingAttachmentInfo depth_attachment)
+{
+	size_t current_frame = context->current_frame % context->max_frames;
+
+	VkRenderingInfo pass_info = { VK_STRUCTURE_TYPE_RENDERING_INFO };
+	pass_info.renderArea.extent.width = context->swapchain->width;
+	pass_info.renderArea.extent.height = context->swapchain->height;
+	pass_info.layerCount = 1;
+	pass_info.colorAttachmentCount = 1;
+	pass_info.pColorAttachments = &color_attachment;
+
+	if (context->depth_state)
+	{
+		pass_info.pDepthAttachment = context->depth_state ? &depth_attachment : nullptr;
+		VkImageMemoryBarrier2 depth_barreir = acp_vulkan::image_barrier(context->swapchain->depth_images[current_frame].image,
+			VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, 0,
+			VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS);
+
+		acp_vulkan::push_pipeline_barrier(command_buffer, 0, 0, nullptr, 1, &depth_barreir);
+	}
+	vkCmdBeginRendering(command_buffer, &pass_info);
+}
+
+void acp_vulkan::renderer_end_main_pass(VkCommandBuffer command_buffer, acp_vulkan::renderer_context* context)
+{
+	size_t current_frame = context->current_frame % context->max_frames;
+	acp_vulkan::frame_sync& sync = context->frame_syncs[current_frame];
+
+	vkCmdEndRendering(command_buffer);
+
+	VkImageMemoryBarrier2 present_color_barreir = acp_vulkan::image_barrier(context->swapchain->images[current_frame],
+		VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS);
+
+	acp_vulkan::push_pipeline_barrier(command_buffer, 0, 0, nullptr, 1, &present_color_barreir);
+
+	ACP_VK_CHECK(vkEndCommandBuffer(command_buffer), context);
+
+	//submit
+
+	VkSubmitInfo submit = {};
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.pNext = nullptr;
+
+	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+	submit.pWaitDstStageMask = &waitStage;
+
+	submit.waitSemaphoreCount = 1;
+	submit.pWaitSemaphores = &sync.present_semaphore;
+
+	submit.signalSemaphoreCount = 1;
+	submit.pSignalSemaphores = &sync.render_semaphore;
+
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &command_buffer;
+
+	ACP_VK_CHECK(vkQueueSubmit(context->graphics_queue, 1, &submit, sync.render_fence), context);
+
+	//present
+
+	VkPresentInfoKHR present_info = {};
+	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	present_info.pNext = nullptr;
+
+	present_info.pSwapchains = &context->swapchain->swapchain;
+	present_info.swapchainCount = 1;
+
+	present_info.pWaitSemaphores = &sync.render_semaphore;
+	present_info.waitSemaphoreCount = 1;
+
+	present_info.pImageIndices = &context->next_image_index;
+
+	context->current_frame++;
+	if (VkResult submit_state = vkQueuePresentKHR(context->graphics_queue, &present_info); submit_state != VK_SUCCESS)
+	{
+		acp_vulkan::renderer_resize(context, context->width, context->height);
+	}
 }
 
 void acp_vulkan::renderer_shutdown(acp_vulkan::renderer_context* context)
@@ -401,7 +541,7 @@ void acp_vulkan::renderer_shutdown(acp_vulkan::renderer_context* context)
 		}
 		if (context->surface)
 		{
-			destroy_renderer_surface(context->surface, context->instance);
+			acp_vulkan_os_specific_destroy_renderer_surface(context->surface, context->instance);
 			context->surface = VK_NULL_HANDLE;
 		}
 
