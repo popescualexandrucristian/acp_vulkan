@@ -141,6 +141,32 @@ void acp_vulkan::fence_destroy(renderer_context* renderer_context, VkFence fence
 	vkDestroyFence(renderer_context->logical_device, fence, renderer_context->host_allocator);
 }
 
+VkSampler acp_vulkan::create_linear_sampler(renderer_context* renderer_context)
+{
+	VkSamplerCreateInfo sampler_info = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+	sampler_info.magFilter = VK_FILTER_LINEAR;
+	sampler_info.minFilter = VK_FILTER_LINEAR;
+	sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler_info.minFilter = VK_FILTER_LINEAR;
+	sampler_info.mipLodBias = 0.0f;
+	sampler_info.minLod = 0;
+	sampler_info.maxLod = 0;
+	sampler_info.anisotropyEnable = VK_FALSE;
+	sampler_info.compareEnable = VK_FALSE;
+	sampler_info.unnormalizedCoordinates = VK_FALSE;
+	VkSampler sampler = VK_NULL_HANDLE;
+	ACP_VK_CHECK(vkCreateSampler(renderer_context->logical_device, &sampler_info, renderer_context->host_allocator, &sampler), renderer_context);
+	return sampler;
+}
+
+void acp_vulkan::destroy_sampler(renderer_context* renderer_context, VkSampler sampler)
+{
+	vkDestroySampler(renderer_context->logical_device, sampler, renderer_context->host_allocator);
+}
+
 VkImageMemoryBarrier2 acp_vulkan::image_barrier(VkImage image, VkPipelineStageFlags2 srcStageMask, VkAccessFlags2 srcAccessMask, VkImageLayout oldLayout, VkPipelineStageFlags2 dstStageMask, VkAccessFlags2 dstAccessMask, VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t baseMipLevel, uint32_t levelCount)
 {
 	VkImageMemoryBarrier2 result = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
@@ -175,7 +201,7 @@ void acp_vulkan::push_pipeline_barrier(VkCommandBuffer commandBuffer, VkDependen
 }
 
 //alex(todo): this is suboptimal as fuck but it will do for now, should upload data properly.
-acp_vulkan::buffer_data acp_vulkan::upload_mesh(renderer_context* context, void* verts, uint32_t num_vertices, uint32_t one_vertex_size)
+acp_vulkan::buffer_data acp_vulkan::upload_data(renderer_context* context, void* verts, uint32_t num_vertices, uint32_t one_vertex_size, VkBufferUsageFlagBits usage)
 {
 	buffer_data staging_buffer{};
 	{
@@ -206,7 +232,7 @@ acp_vulkan::buffer_data acp_vulkan::upload_mesh(renderer_context* context, void*
 		VkBufferCreateInfo buffer_info = {};
 		buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		buffer_info.size = num_vertices * one_vertex_size;
-		buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage;
 
 		VmaAllocationCreateInfo vmaalloc_info = {};
 		vmaalloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -229,4 +255,113 @@ acp_vulkan::buffer_data acp_vulkan::upload_mesh(renderer_context* context, void*
 	vmaDestroyBuffer(context->gpu_allocator, staging_buffer.buffer, staging_buffer.allocation);
 
 	return out;
+}
+
+acp_vulkan::image_data acp_vulkan::upload_image(renderer_context* context, image_mip_data* image_mip_data, const VkImageCreateInfo& image_info)
+{
+	size_t total_size = 0;
+	for (size_t ii = 0; ii < image_info.mipLevels; ++ii)
+		total_size += image_mip_data[ii].data_size;
+
+	buffer_data staging_buffer{};
+	{
+		VkBufferCreateInfo buffer_info = {};
+		buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		buffer_info.size = total_size;
+		buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+		VmaAllocationCreateInfo vmaalloc_info = {};
+		vmaalloc_info.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+		ACP_VK_CHECK(vmaCreateBuffer(context->gpu_allocator, &buffer_info, &vmaalloc_info,
+			&staging_buffer.buffer,
+			&staging_buffer.allocation,
+			nullptr), context);
+	}
+
+	{
+		void* stageing_data = nullptr;
+		vmaMapMemory(context->gpu_allocator, staging_buffer.allocation, &stageing_data);
+		size_t byes_written = 0;
+		{
+			for (size_t ii = 0; ii < image_info.mipLevels; ++ii)
+			{
+				memcpy(reinterpret_cast<uint8_t*>(stageing_data) + byes_written, image_mip_data[ii].data, image_mip_data[ii].data_size);
+				byes_written += image_mip_data[ii].data_size;
+			}
+		}
+		vmaUnmapMemory(context->gpu_allocator, staging_buffer.allocation);
+	}
+
+	// allocate new image on the gpu
+	image_data new_image{};
+	{
+		VmaAllocationCreateInfo img_alloc_info = {};
+		img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+		vmaCreateImage(context->gpu_allocator, &image_info, &img_alloc_info, &new_image.image, &new_image.memory_allocation, nullptr);
+	}
+
+	immediate_submit(context,[&new_image, image_mip_data, &staging_buffer, image_info](VkCommandBuffer cmd) {
+		VkImageSubresourceRange range{};
+		range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		range.levelCount = image_info.mipLevels;
+		range.layerCount = image_info.arrayLayers;
+
+		//transition the new image to a linear layout
+		{
+			VkImageMemoryBarrier image_barrier_to_transfer = {};
+			image_barrier_to_transfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+
+			image_barrier_to_transfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			image_barrier_to_transfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			image_barrier_to_transfer.image = new_image.image;
+			image_barrier_to_transfer.subresourceRange = range;
+
+			image_barrier_to_transfer.srcAccessMask = 0;
+			image_barrier_to_transfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_barrier_to_transfer);
+		}
+
+		//copy the data from the cpu to the gpu
+		std::vector<VkBufferImageCopy> copyRegions;
+		VkDeviceSize buffer_read_offset = 0;
+		for (uint32_t mip = 0; mip < image_info.mipLevels; ++mip)
+		{
+			VkBufferImageCopy copyRegion = {};
+			copyRegion.bufferOffset = buffer_read_offset;
+			buffer_read_offset += image_mip_data[mip].data_size;
+			copyRegion.bufferRowLength = 0;
+			copyRegion.bufferImageHeight = 0;
+
+			copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			copyRegion.imageSubresource.mipLevel = mip;
+			copyRegion.imageSubresource.baseArrayLayer = 0;
+			copyRegion.imageSubresource.layerCount = image_info.arrayLayers;
+			copyRegion.imageExtent = image_mip_data[mip].extents;
+
+			copyRegions.push_back(copyRegion);
+		}
+		vkCmdCopyBufferToImage(cmd, staging_buffer.buffer, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, uint32_t(copyRegions.size()), copyRegions.data());
+
+		//transition the new image to the optimal layout
+		{
+			VkImageMemoryBarrier image_barrier_to_readable = {};
+			image_barrier_to_readable.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			image_barrier_to_readable.image = new_image.image;
+			image_barrier_to_readable.subresourceRange = range;
+			image_barrier_to_readable.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			image_barrier_to_readable.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+			image_barrier_to_readable.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			image_barrier_to_readable.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_barrier_to_readable);
+		}
+		});
+
+	vmaDestroyBuffer(context->gpu_allocator, staging_buffer.buffer, staging_buffer.allocation);
+
+	return new_image;
 }

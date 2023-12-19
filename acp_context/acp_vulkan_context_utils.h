@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include <vma/vk_mem_alloc.h>
+#include <acp_dds_vulkan.h>
 #include <functional>
 
 #define ACP_VK_CHECK(x, c)										\
@@ -47,6 +48,9 @@ namespace acp_vulkan
 	VkFence fence_create(acp_vulkan::renderer_context* renderer_context, bool create_signaled);
 	void fence_destroy(acp_vulkan::renderer_context* renderer_context, VkFence fence);
 
+	VkSampler create_linear_sampler(renderer_context* renderer_context);
+	void destroy_sampler(renderer_context* renderer_context, VkSampler sampler);
+
 	VkImageMemoryBarrier2 image_barrier(VkImage image, VkPipelineStageFlags2 srcStageMask, VkAccessFlags2 srcAccessMask, VkImageLayout oldLayout, VkPipelineStageFlags2 dstStageMask, VkAccessFlags2 dstAccessMask, VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t baseMipLevel, uint32_t levelCount);
 
 	void push_pipeline_barrier(VkCommandBuffer commandBuffer, VkDependencyFlags dependencyFlags, size_t bufferBarrierCount, const VkBufferMemoryBarrier2* bufferBarriers, size_t imageBarrierCount, const VkImageMemoryBarrier2* imageBarriers);
@@ -55,5 +59,6 @@ namespace acp_vulkan
 		VkBuffer buffer{ VK_NULL_HANDLE };
 		VmaAllocation allocation{ nullptr };
 	};
-	buffer_data upload_mesh(acp_vulkan::renderer_context* context, void* verts, uint32_t num_vertices, uint32_t one_vertex_size);
+	buffer_data upload_data(renderer_context* context, void* verts, uint32_t num_vertices, uint32_t one_vertex_size, VkBufferUsageFlagBits usage);
+	image_data upload_image(renderer_context* context, image_mip_data* image_mip_data, const VkImageCreateInfo& image_info);
 };

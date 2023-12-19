@@ -1032,9 +1032,6 @@ acp_vulkan::dds_data acp_vulkan::dds_data_from_memory(void* data, size_t data_si
     out.image_create_info = image_info;
     out.width = width;
     out.height = height;
-    out.num_bytes = num_bytes;
-    out.row_bytes = row_bytes;
-    out.num_rows = num_rows;
     out.num_mips = 0;
     out.dss_buffer_data = dds_file.data.blBuffer;
     out.full_data = will_own_data ? dds_file.data.blBuffer : nullptr;
@@ -1137,4 +1134,19 @@ void acp_vulkan::dds_data_free(dds_data* dds_data, VkAllocationCallbacks* host_a
     }
     if (dds_data->full_data)
         delete[] dds_data->full_data;
+}
+
+VkImageViewCreateInfo acp_vulkan::dds_data_create_view_info(const dds_data* dds_data, VkImage image)
+{
+    VkImageViewCreateInfo image_view_info = {};
+    image_view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    image_view_info.format = dds_data->image_create_info.format;
+    image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    image_view_info.subresourceRange.baseMipLevel = 0;
+    image_view_info.subresourceRange.levelCount = dds_data->image_create_info.mipLevels;
+    image_view_info.subresourceRange.baseArrayLayer = 0;
+    image_view_info.subresourceRange.layerCount = dds_data->image_create_info.arrayLayers;
+    image_view_info.image = image;
+    return image_view_info;
 }
