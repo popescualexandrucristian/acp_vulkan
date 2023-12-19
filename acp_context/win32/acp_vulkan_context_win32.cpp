@@ -217,6 +217,14 @@ VkSurfaceKHR acp_vulkan_os_specific_create_renderer_surface(VkInstance instance)
 	return surface;
 }
 
+acp_vulkan_os_specific_width_and_height acp_vulkan_os_specific_get_width_and_height()
+{
+	handle_data main_window = find_main_window(GetProcessId(GetCurrentProcess()));
+	RECT rect{};
+	GetClientRect(main_window.window_handle, &rect);
+	return { uint32_t(rect.right - rect.left), uint32_t(rect.top - rect.bottom) };
+}
+
 void acp_vulkan_os_specific_destroy_renderer_surface(VkSurfaceKHR surface, VkInstance instance)
 {
 	vkDestroySurfaceKHR(instance, surface, nullptr);

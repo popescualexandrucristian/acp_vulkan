@@ -96,4 +96,11 @@ bool acp_vulkan_os_specific_get_renderer_device_supports_presentation(VkPhysical
 VkSurfaceKHR acp_vulkan_os_specific_create_renderer_surface(VkInstance instance);
 void acp_vulkan_os_specific_destroy_renderer_surface(VkSurfaceKHR surface, VkInstance instance);
 
+struct acp_vulkan_os_specific_width_and_height
+{
+	uint32_t width{ 0 };
+	uint32_t height{ 0 };
+};
+acp_vulkan_os_specific_width_and_height acp_vulkan_os_specific_get_width_and_height();
+
 void acp_vulkan_os_specific_log(const char* format, ...);
