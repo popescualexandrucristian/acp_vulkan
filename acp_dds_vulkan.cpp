@@ -1121,7 +1121,7 @@ acp_vulkan::dds_data acp_vulkan::dds_data_from_file(const char* path, VkAllocati
     }
 
     acp_vulkan::dds_data out = dds_data_from_memory(dds_data, dds_size, false, nullptr);
-    out.full_data = dds_bytes; // The dds_data will own the memory and it will be removed on dds_data_free.
+    out.full_data = dds_data; // The dds_data will own the memory and it will be removed on dds_data_free.
     return out;
 }
 

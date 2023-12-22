@@ -72,7 +72,8 @@ namespace acp_vulkan
     {
         VkPipelineLayout pipeline_layout;
         VkPipeline pipeline;
-        std::vector<VkDescriptorSetLayout> descriptor_layouts;
+        typedef std::pair<VkDescriptorSetLayout, std::vector<VkDescriptorSetLayoutBinding>> layout;
+        std::vector<layout> descriptor_layouts;
     };
 
     struct input_attribute_data

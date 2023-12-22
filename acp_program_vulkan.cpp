@@ -616,9 +616,9 @@ void acp_vulkan::shader_destroy(VkDevice logical_device, VkAllocationCallbacks* 
     delete shader;
 }
 
-static std::vector<VkDescriptorSetLayout> createDescriptorLayoutsAssumeSharedSets(VkDevice logical_device, VkAllocationCallbacks* host_allocator, acp_vulkan::shaders shaders)
+static std::vector<acp_vulkan::graphics_program::layout> createDescriptorLayoutsAssumeSharedSets(VkDevice logical_device, VkAllocationCallbacks* host_allocator, acp_vulkan::shaders shaders)
 {
-    std::vector<VkDescriptorSetLayout> out;
+    std::vector<acp_vulkan::graphics_program::layout> out;
     std::map<uint32_t, uint32_t> set_ids_to_num_bindings;
     for (const acp_vulkan::shader* const shader : shaders)
     {
@@ -673,20 +673,20 @@ static std::vector<VkDescriptorSetLayout> createDescriptorLayoutsAssumeSharedSet
         vkCreateDescriptorSetLayout(logical_device, &decriptor_layout_create_info, host_allocator, &descriptor_layout);
         if (descriptor_layout == VK_NULL_HANDLE)
         {
-            for (VkDescriptorSetLayout l : out)
-                vkDestroyDescriptorSetLayout(logical_device, l, host_allocator);
+            for (auto l : out)
+                vkDestroyDescriptorSetLayout(logical_device, l.first, host_allocator);
             out.clear();
             return out;
         }
-        out.push_back(descriptor_layout);
+        out.push_back({ descriptor_layout, std::move(bindings) });
     }
 
     return out;
 }
 
-static std::vector<VkDescriptorSetLayout> createDescriptorLayoutsNoSharedSets(VkDevice logical_device, VkAllocationCallbacks* host_allocator, acp_vulkan::shaders shaders)
+static std::vector<acp_vulkan::graphics_program::layout> createDescriptorLayoutsNoSharedSets(VkDevice logical_device, VkAllocationCallbacks* host_allocator, acp_vulkan::shaders shaders)
 {
-    std::vector<VkDescriptorSetLayout> descriptor_layouts;
+    std::vector<acp_vulkan::graphics_program::layout> out;
     for (const acp_vulkan::shader* const shader : shaders)
     {
         std::map<uint32_t, uint32_t> set_ids_to_num_bindings;
@@ -719,15 +719,15 @@ static std::vector<VkDescriptorSetLayout> createDescriptorLayoutsNoSharedSets(Vk
             vkCreateDescriptorSetLayout(logical_device, &decriptor_layout_create_info, host_allocator, &descriptor_layout);
             if (descriptor_layout == VK_NULL_HANDLE)
             {
-                for (VkDescriptorSetLayout l : descriptor_layouts)
-                    vkDestroyDescriptorSetLayout(logical_device, l, host_allocator);
-                descriptor_layouts.clear();
-                return descriptor_layouts;
+                for (auto l : out)
+                    vkDestroyDescriptorSetLayout(logical_device, l.first, host_allocator);
+                out.clear();
+                return out;
             }
-            descriptor_layouts.push_back(descriptor_layout);
+            out.push_back({ descriptor_layout, std::move(bindings) });
         }
     }
-    return descriptor_layouts;
+    return out;
 }
 
 acp_vulkan::graphics_program* acp_vulkan::graphics_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, shaders shaders, input_attributes vertex_input_attributes, size_t push_constant_size, bool use_depth, bool write_to_depth, bool sharedDescriptorSets, uint32_t color_attachment_count, const VkFormat* color_attachment_formats, VkFormat depth_attachment_format, VkFormat stencil_attachment_format)
@@ -919,12 +919,17 @@ acp_vulkan::graphics_program* acp_vulkan::graphics_program_init(VkDevice logical
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipelineLayoutCreateInfo layout_create_info{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
 
-    const std::vector<VkDescriptorSetLayout> descriptor_layouts =
+    const std::vector<graphics_program::layout> descriptor_layouts =
         sharedDescriptorSets ? createDescriptorLayoutsAssumeSharedSets(logical_device, host_allocator, shaders) :
         createDescriptorLayoutsNoSharedSets(logical_device, host_allocator, shaders);
 
-    layout_create_info.pSetLayouts = descriptor_layouts.data();
-    layout_create_info.setLayoutCount = uint32_t(descriptor_layouts.size());
+    std::vector<VkDescriptorSetLayout> raw_layouts;
+    raw_layouts.reserve(descriptor_layouts.size());
+    for (auto ii : descriptor_layouts)
+        raw_layouts.push_back(ii.first);
+
+    layout_create_info.pSetLayouts = raw_layouts.data();
+    layout_create_info.setLayoutCount = uint32_t(raw_layouts.size());
 
     VkPushConstantRange push_constant_range{};
     push_constant_range.offset = 0;
@@ -984,9 +989,9 @@ void acp_vulkan::graphics_program_destroy(VkDevice logical_device, VkAllocationC
         vkDestroyPipeline(logical_device, program->pipeline, host_allocator);
         program->pipeline = VK_NULL_HANDLE;
     }
-    for (VkDescriptorSetLayout descriptor_layout : program->descriptor_layouts)
+    for (auto descriptor_layout : program->descriptor_layouts)
     {
-        vkDestroyDescriptorSetLayout(logical_device, descriptor_layout, host_allocator);
+        vkDestroyDescriptorSetLayout(logical_device, descriptor_layout.first, host_allocator);
     }
     program->descriptor_layouts.clear();
     if (program->pipeline_layout)

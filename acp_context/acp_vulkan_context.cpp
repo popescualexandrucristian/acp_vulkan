@@ -322,6 +322,7 @@ acp_vulkan::renderer_context* acp_vulkan::renderer_init(const renderer_init_cont
 	out->vsync_state = init_context.use_vsync;
 	out->width = init_context.width;
 	out->height = init_context.height;
+	out->is_minimized = false;
 
 	if (!create_instance(out, init_context.use_validation, init_context.use_synchronization_validation))
 		goto ERROR;
@@ -387,12 +388,26 @@ ERROR:
 
 bool acp_vulkan::renderer_resize(acp_vulkan::renderer_context* context, uint32_t width, uint32_t height)
 {
+	context->is_minimized = false;
+
+	if (width == 0 || height == 0)
+	{
+		context->is_minimized = true;
+		return true;
+	}
+
 	acp_vulkan::renderer_context::user_context_data::resize_context resize_context = context->user_context.renderer_resize(context, width, height);
 	if (resize_context.width == 0 && 
 		resize_context.height == 0 && 
 		resize_context.use_depth == false && 
 		resize_context.use_vsync == false)
 		return false;
+
+	if (resize_context.width == 0 || resize_context.height == 0)
+	{
+		context->is_minimized = true;
+		return true;
+	}
 
 	if (swapchian_update(context->swapchain, context, resize_context.width, resize_context.height, resize_context.use_vsync, resize_context.use_depth))
 	{
@@ -406,6 +421,9 @@ bool acp_vulkan::renderer_resize(acp_vulkan::renderer_context* context, uint32_t
 
 bool acp_vulkan::renderer_update(acp_vulkan::renderer_context* context, double delta_time)
 {
+	if (context->is_minimized)
+		return true;
+
 	size_t current_frame = context->current_frame % context->max_frames;
 	acp_vulkan::frame_sync& sync = context->frame_syncs[current_frame];
 

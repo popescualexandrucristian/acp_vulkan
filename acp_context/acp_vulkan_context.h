@@ -43,6 +43,7 @@ namespace acp_vulkan
 		bool depth_state;
 		uint32_t width;
 		uint32_t height;
+		bool is_minimized;
 
 		struct user_context_data
 		{
@@ -102,5 +103,7 @@ struct acp_vulkan_os_specific_width_and_height
 	uint32_t height{ 0 };
 };
 acp_vulkan_os_specific_width_and_height acp_vulkan_os_specific_get_width_and_height();
+
+void* acp_vulkan_os_specific_get_main_window_handle();
 
 void acp_vulkan_os_specific_log(const char* format, ...);

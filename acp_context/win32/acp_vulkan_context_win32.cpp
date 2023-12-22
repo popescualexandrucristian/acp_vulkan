@@ -225,6 +225,12 @@ acp_vulkan_os_specific_width_and_height acp_vulkan_os_specific_get_width_and_hei
 	return { uint32_t(rect.right - rect.left), uint32_t(rect.bottom - rect.top) };
 }
 
+void* acp_vulkan_os_specific_get_main_window_handle()
+{
+	handle_data main_window = find_main_window(GetProcessId(GetCurrentProcess()));
+	return main_window.window_handle;
+}
+
 void acp_vulkan_os_specific_destroy_renderer_surface(VkSurfaceKHR surface, VkInstance instance)
 {
 	vkDestroySurfaceKHR(instance, surface, nullptr);
