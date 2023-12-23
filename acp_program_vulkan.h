@@ -68,7 +68,7 @@ namespace acp_vulkan
     shader* shader_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const char* path);
     void shader_destroy(VkDevice logical_device, VkAllocationCallbacks* host_allocator, shader* shader);
 
-    struct graphics_program
+    struct program
     {
         VkPipelineLayout pipeline_layout;
         VkPipeline pipeline;
@@ -87,9 +87,11 @@ namespace acp_vulkan
 
     typedef std::initializer_list<input_attribute_data> input_attributes;
     //alex(todo) : add options for blending and move all the bools to flags.
-    graphics_program* graphics_program_init(
+    program* graphics_program_init(
         VkDevice logical_device, VkAllocationCallbacks* host_allocator, shaders shaders, input_attributes vertex_input_attributes,
         size_t push_constant_size, bool use_depth, bool write_to_depth, bool sharedDescriptorSets,
         uint32_t color_attachment_count, const VkFormat* color_attachment_formats, VkFormat depth_attachment_format, VkFormat stencil_attachment_format);
-    void graphics_program_destroy(VkDevice logical_device, VkAllocationCallbacks* host_allocator, graphics_program* program);
+    acp_vulkan::program* compute_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const shader* shaders, 
+        size_t push_constant_size, bool sharedDescriptorSets);
+    void program_destroy(VkDevice logical_device, VkAllocationCallbacks* host_allocator, program* program);
 };

@@ -616,9 +616,9 @@ void acp_vulkan::shader_destroy(VkDevice logical_device, VkAllocationCallbacks* 
     delete shader;
 }
 
-static std::vector<acp_vulkan::graphics_program::layout> createDescriptorLayoutsAssumeSharedSets(VkDevice logical_device, VkAllocationCallbacks* host_allocator, acp_vulkan::shaders shaders)
+static std::vector<acp_vulkan::program::layout> createDescriptorLayoutsAssumeSharedSets(VkDevice logical_device, VkAllocationCallbacks* host_allocator, acp_vulkan::shaders shaders)
 {
-    std::vector<acp_vulkan::graphics_program::layout> out;
+    std::vector<acp_vulkan::program::layout> out;
     std::map<uint32_t, uint32_t> set_ids_to_num_bindings;
     for (const acp_vulkan::shader* const shader : shaders)
     {
@@ -684,9 +684,9 @@ static std::vector<acp_vulkan::graphics_program::layout> createDescriptorLayouts
     return out;
 }
 
-static std::vector<acp_vulkan::graphics_program::layout> createDescriptorLayoutsNoSharedSets(VkDevice logical_device, VkAllocationCallbacks* host_allocator, acp_vulkan::shaders shaders)
+static std::vector<acp_vulkan::program::layout> createDescriptorLayoutsNoSharedSets(VkDevice logical_device, VkAllocationCallbacks* host_allocator, acp_vulkan::shaders shaders)
 {
-    std::vector<acp_vulkan::graphics_program::layout> out;
+    std::vector<acp_vulkan::program::layout> out;
     for (const acp_vulkan::shader* const shader : shaders)
     {
         std::map<uint32_t, uint32_t> set_ids_to_num_bindings;
@@ -730,7 +730,86 @@ static std::vector<acp_vulkan::graphics_program::layout> createDescriptorLayouts
     return out;
 }
 
-acp_vulkan::graphics_program* acp_vulkan::graphics_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, shaders shaders, input_attributes vertex_input_attributes, size_t push_constant_size, bool use_depth, bool write_to_depth, bool sharedDescriptorSets, uint32_t color_attachment_count, const VkFormat* color_attachment_formats, VkFormat depth_attachment_format, VkFormat stencil_attachment_format)
+struct pipeline_layout_data
+{
+    const std::vector<acp_vulkan::program::layout> descriptor_layouts;
+    VkPipelineLayout pipeline_layout;
+};
+static pipeline_layout_data create_pipeline_layout(VkDevice logical_device, VkAllocationCallbacks* host_allocator, acp_vulkan::shaders shaders, size_t push_constant_size, bool sharedDescriptorSets)
+{
+    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+    VkPipelineLayoutCreateInfo layout_create_info{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+
+    const std::vector<acp_vulkan::program::layout> descriptor_layouts =
+        sharedDescriptorSets ? createDescriptorLayoutsAssumeSharedSets(logical_device, host_allocator, shaders) :
+        createDescriptorLayoutsNoSharedSets(logical_device, host_allocator, shaders);
+
+    std::vector<VkDescriptorSetLayout> raw_layouts;
+    raw_layouts.reserve(descriptor_layouts.size());
+    for (auto ii : descriptor_layouts)
+        raw_layouts.push_back(ii.first);
+
+    layout_create_info.pSetLayouts = raw_layouts.data();
+    layout_create_info.setLayoutCount = uint32_t(raw_layouts.size());
+
+    VkPushConstantRange push_constant_range{};
+    push_constant_range.offset = 0;
+    push_constant_range.size = uint32_t(push_constant_size);
+    push_constant_range.stageFlags = 0;
+    for (const acp_vulkan::shader* const shader : shaders)
+    {
+        if (shader->uses_constants)
+            push_constant_range.stageFlags |= shader->type;
+    }
+    layout_create_info.pPushConstantRanges = &push_constant_range;
+    layout_create_info.pushConstantRangeCount = 1;
+
+    if (push_constant_range.stageFlags == 0)
+        layout_create_info.pushConstantRangeCount = 0;
+
+    if (vkCreatePipelineLayout(logical_device, &layout_create_info, host_allocator, &pipeline_layout) != VK_SUCCESS)
+        return { {}, VK_NULL_HANDLE };
+
+    return {std::move(descriptor_layouts), pipeline_layout};
+}
+
+acp_vulkan::program* acp_vulkan::compute_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const shader* shader, size_t push_constant_size, bool sharedDescriptorSets)
+{
+    VkComputePipelineCreateInfo create_info{ VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
+    //todo(alex) : Use this and the pipeline cache
+    create_info.basePipelineHandle = VK_NULL_HANDLE;
+    create_info.basePipelineIndex = 0;
+    create_info.flags = 0;
+
+    pipeline_layout_data pipeline_layout_data = create_pipeline_layout(logical_device, host_allocator, acp_vulkan::shaders{shader}, push_constant_size, sharedDescriptorSets);
+    if (pipeline_layout_data.pipeline_layout == VK_NULL_HANDLE)
+        return nullptr;
+
+    create_info.layout = pipeline_layout_data.pipeline_layout;
+    
+    create_info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    create_info.stage.stage = shader->type;
+    create_info.stage.module = shader->module;
+    create_info.stage.pName = shader->metadata.entry_point.c_str();
+
+    VkPipeline output_pipeline = VK_NULL_HANDLE;
+    VkPipelineCache pipeline_cache = VK_NULL_HANDLE;
+    if (vkCreateComputePipelines(logical_device, pipeline_cache, 1, &create_info, host_allocator, &output_pipeline) != VK_SUCCESS)
+        return nullptr;
+    if (output_pipeline == VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(logical_device, pipeline_layout_data.pipeline_layout, host_allocator);
+        return nullptr;
+    }
+
+    program* out = new program();
+    out->pipeline = output_pipeline;
+    out->pipeline_layout = pipeline_layout_data.pipeline_layout;
+    out->descriptor_layouts = std::move(pipeline_layout_data.descriptor_layouts);
+    return out;
+}
+
+acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, shaders shaders, input_attributes vertex_input_attributes, size_t push_constant_size, bool use_depth, bool write_to_depth, bool sharedDescriptorSets, uint32_t color_attachment_count, const VkFormat* color_attachment_formats, VkFormat depth_attachment_format, VkFormat stencil_attachment_format)
 {
     VkGraphicsPipelineCreateInfo create_info{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
     create_info.stageCount = uint32_t(shaders.size());
@@ -740,7 +819,7 @@ acp_vulkan::graphics_program* acp_vulkan::graphics_program_init(VkDevice logical
         VkPipelineShaderStageCreateInfo shader_create_info{ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
         shader_create_info.stage = shader->type;
         shader_create_info.module = shader->module;
-        shader_create_info.pName = "main";
+        shader_create_info.pName = shader->metadata.entry_point.c_str();
         shader_stages.push_back(shader_create_info);
     }
     create_info.pStages = shader_stages.data();
@@ -774,7 +853,7 @@ acp_vulkan::graphics_program* acp_vulkan::graphics_program_init(VkDevice logical
                             attribute_description.location = vertex_input_attribute.locations[ii];
                             switch (shader_usage_attribute.field_type)
                             {
-                                //todo(alex) : check that bools are actualy transfered as signed ints, this is what I remember
+                            //todo(alex) : check that bools are actualy transfered as signed ints, this is what I remember
                             case shader::meta::type::bool_type:
                                 attribute_description.format = VK_FORMAT_R32_UINT;
                                 break;
@@ -916,36 +995,6 @@ acp_vulkan::graphics_program* acp_vulkan::graphics_program_init(VkDevice logical
     dynamic_state_create_info.dynamicStateCount = uint32_t(sizeof(dynamic_states) / sizeof(dynamic_states[0]));
     create_info.pDynamicState = &dynamic_state_create_info;
 
-    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-    VkPipelineLayoutCreateInfo layout_create_info{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
-
-    const std::vector<graphics_program::layout> descriptor_layouts =
-        sharedDescriptorSets ? createDescriptorLayoutsAssumeSharedSets(logical_device, host_allocator, shaders) :
-        createDescriptorLayoutsNoSharedSets(logical_device, host_allocator, shaders);
-
-    std::vector<VkDescriptorSetLayout> raw_layouts;
-    raw_layouts.reserve(descriptor_layouts.size());
-    for (auto ii : descriptor_layouts)
-        raw_layouts.push_back(ii.first);
-
-    layout_create_info.pSetLayouts = raw_layouts.data();
-    layout_create_info.setLayoutCount = uint32_t(raw_layouts.size());
-
-    VkPushConstantRange push_constant_range{};
-    push_constant_range.offset = 0;
-    push_constant_range.size = uint32_t(push_constant_size);
-    push_constant_range.stageFlags = 0;
-    for (const shader* const shader : shaders)
-    {
-        if (shader->uses_constants)
-            push_constant_range.stageFlags |= shader->type;
-    }
-    layout_create_info.pPushConstantRanges = &push_constant_range;
-    layout_create_info.pushConstantRangeCount = 1;
-
-    if (push_constant_range.stageFlags == 0)
-        layout_create_info.pushConstantRangeCount = 0;
-
     VkPipelineRenderingCreateInfo rendering_info = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
     rendering_info.colorAttachmentCount = color_attachment_count;
     rendering_info.pColorAttachmentFormats = color_attachment_formats;
@@ -953,11 +1002,11 @@ acp_vulkan::graphics_program* acp_vulkan::graphics_program_init(VkDevice logical
     rendering_info.stencilAttachmentFormat = stencil_attachment_format;
     create_info.pNext = &rendering_info;
 
-    if (vkCreatePipelineLayout(logical_device, &layout_create_info, host_allocator, &pipeline_layout) != VK_SUCCESS)
+    pipeline_layout_data pipeline_layout_data = create_pipeline_layout(logical_device, host_allocator, shaders, push_constant_size, sharedDescriptorSets);
+    if (pipeline_layout_data.pipeline_layout == VK_NULL_HANDLE)
         return nullptr;
-    if (pipeline_layout == VK_NULL_HANDLE)
-        return nullptr;
-    create_info.layout = pipeline_layout;
+
+    create_info.layout = pipeline_layout_data.pipeline_layout;
 
     //todo(alex) : Use this and the pipeline cache
     create_info.renderPass = VK_NULL_HANDLE;
@@ -971,18 +1020,18 @@ acp_vulkan::graphics_program* acp_vulkan::graphics_program_init(VkDevice logical
         return nullptr;
     if (output_pipeline == VK_NULL_HANDLE)
     {
-        vkDestroyPipelineLayout(logical_device, pipeline_layout, host_allocator);
+        vkDestroyPipelineLayout(logical_device, pipeline_layout_data.pipeline_layout, host_allocator);
         return nullptr;
     }
 
-    graphics_program* out = new graphics_program();
+    program* out = new program();
     out->pipeline = output_pipeline;
-    out->pipeline_layout = pipeline_layout;
-    out->descriptor_layouts = std::move(descriptor_layouts);
+    out->pipeline_layout = pipeline_layout_data.pipeline_layout;
+    out->descriptor_layouts = std::move(pipeline_layout_data.descriptor_layouts);
     return out;
 }
 
-void acp_vulkan::graphics_program_destroy(VkDevice logical_device, VkAllocationCallbacks* host_allocator, graphics_program* program)
+void acp_vulkan::program_destroy(VkDevice logical_device, VkAllocationCallbacks* host_allocator, program* program)
 {
     if (program->pipeline)
     {
