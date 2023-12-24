@@ -1,5 +1,7 @@
 # acp_vulkan
-#### version: 0.2
+#### version: 0.3
+---
+For examples see : https://github.com/popescualexandrucristian/engine6
 ---
 Utility tools that help with some of the Vulkan's boilerplate.
 
