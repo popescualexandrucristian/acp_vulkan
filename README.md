@@ -76,13 +76,15 @@ Note :
 //This info comes in a list of input_attribute_data, this is optional and only needed if the input attributes are used in the vertex shader.
 struct input_attribute_data
 {
-    uint32_t				binding;
+    uint32_t			binding;
     std::vector<uint32_t>	offsets;
     std::vector<uint32_t>	locations;
-    uint32_t				stride;
+    uint32_t			stride;
     VkVertexInputRate		input_rate;
 };
+```
 
+```
 struct program
 {
     VkPipelineLayout pipeline_layout;
@@ -90,7 +92,9 @@ struct program
     typedef std::pair<VkDescriptorSetLayout, std::vector<VkDescriptorSetLayoutBinding>> layout;
     std::vector<layout> descriptor_layouts;
 };
+```
 
+```
 program* graphics_program_init(
         VkDevice logical_device, 
         VkAllocationCallbacks* host_allocator, 
@@ -119,9 +123,9 @@ program* compute_program_init(
 
 Deallocate a pipeline, it's layout and it's descriptor layouts + the metadata.
 ```
-    void graphics_program_destroy(
+    void program_destroy(
     VkDevice logical_device, 
-    VkAllocationCallbacks* host_allocator, graphics_program* program);
+    VkAllocationCallbacks* host_allocator, program* program);
 ```
 
 ### acp_dds_vulkan.h
