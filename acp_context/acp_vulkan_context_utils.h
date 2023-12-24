@@ -25,16 +25,16 @@ namespace acp_vulkan
 {	
 	struct renderer_context;
 
-	VkCommandPool commands_pool_crate(acp_vulkan::renderer_context* renderer_context);
+	VkCommandPool commands_pool_crate(acp_vulkan::renderer_context* renderer_context, const char* name);
 	void commands_pool_destroy(acp_vulkan::renderer_context* renderer_context, VkCommandPool commands_pool);
 
-	VkSemaphore semaphore_create(acp_vulkan::renderer_context* renderer_context);
+	VkSemaphore semaphore_create(acp_vulkan::renderer_context* renderer_context, const char* name);
 	void semaphore_destroy(acp_vulkan::renderer_context* renderer_context, VkSemaphore semaphore);
 
-	VkDescriptorPool descriptor_pool_create(acp_vulkan::renderer_context* renderer_context, uint32_t max_descriptor_count);
+	VkDescriptorPool descriptor_pool_create(acp_vulkan::renderer_context* renderer_context, uint32_t max_descriptor_count, const char* name);
 	void descriptor_pool_destroy(acp_vulkan::renderer_context* renderer_context, VkDescriptorPool descriptor_pool);
 
-	VkImageView image_view_create(acp_vulkan::renderer_context* renderer_context, VkImage image, VkFormat format, uint32_t mip_level, uint32_t level_count, VkImageAspectFlags aspectMask);
+	VkImageView image_view_create(acp_vulkan::renderer_context* renderer_context, VkImage image, VkFormat format, uint32_t mip_level, uint32_t level_count, VkImageAspectFlags aspectMask, const char* name);
 	void image_view_destroy(acp_vulkan::renderer_context* renderer_context, VkImageView image_view);
 
 	struct image_data
@@ -42,13 +42,13 @@ namespace acp_vulkan
 		VkImage image{ VK_NULL_HANDLE };
 		VmaAllocation memory_allocation{ nullptr };
 	};
-	image_data image_create(acp_vulkan::renderer_context* renderer_context, uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage, VmaMemoryUsage memory_usage);
+	image_data image_create(acp_vulkan::renderer_context* renderer_context, uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage, VmaMemoryUsage memory_usage, const char* name);
 	void image_destroy(acp_vulkan::renderer_context* renderer_context, image_data image_data);
 
-	VkFence fence_create(acp_vulkan::renderer_context* renderer_context, bool create_signaled);
+	VkFence fence_create(acp_vulkan::renderer_context* renderer_context, bool create_signaled, const char* name);
 	void fence_destroy(acp_vulkan::renderer_context* renderer_context, VkFence fence);
 
-	VkSampler create_linear_sampler(renderer_context* renderer_context);
+	VkSampler create_linear_sampler(renderer_context* renderer_context, const char* name);
 	void destroy_sampler(renderer_context* renderer_context, VkSampler sampler);
 
 	VkImageMemoryBarrier2 image_barrier(VkImage image, VkPipelineStageFlags2 srcStageMask, VkAccessFlags2 srcAccessMask, VkImageLayout oldLayout, VkPipelineStageFlags2 dstStageMask, VkAccessFlags2 dstAccessMask, VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t baseMipLevel, uint32_t levelCount);
@@ -59,6 +59,6 @@ namespace acp_vulkan
 		VkBuffer buffer{ VK_NULL_HANDLE };
 		VmaAllocation allocation{ nullptr };
 	};
-	buffer_data upload_data(renderer_context* context, void* verts, uint32_t num_vertices, uint32_t one_vertex_size, VkBufferUsageFlagBits usage);
-	image_data upload_image(renderer_context* context, image_mip_data* image_mip_data, const VkImageCreateInfo& image_info);
+	buffer_data upload_data(renderer_context* context, void* verts, uint32_t num_vertices, uint32_t one_vertex_size, VkBufferUsageFlagBits usage, const char* name);
+	image_data upload_image(renderer_context* context, image_mip_data* image_mip_data, const VkImageCreateInfo& image_info, const char* name);
 };

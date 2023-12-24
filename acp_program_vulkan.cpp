@@ -6,6 +6,10 @@
 #include <spirv-headers/spirv.h>
 #include <assert.h>
 
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+#include <acp_debug_vulkan.h>
+#endif
+
 struct shader_id
 {
     uint32_t opcode;
@@ -565,7 +569,7 @@ static bool update_shader_metadata(acp_vulkan::shader* shader, const uint32_t* c
     return true;
 }
 
-acp_vulkan::shader* acp_vulkan::shader_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const uint32_t* const data, size_t data_size)
+acp_vulkan::shader* acp_vulkan::shader_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const uint32_t* const data, size_t data_size, const char* name)
 {
     VkShaderModule module = VK_NULL_HANDLE;
     VkShaderModuleCreateInfo create_info{ VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
@@ -573,6 +577,10 @@ acp_vulkan::shader* acp_vulkan::shader_init(VkDevice logical_device, VkAllocatio
     create_info.pCode = data;
     if (vkCreateShaderModule(logical_device, &create_info, host_allocator, &module) != VK_SUCCESS)
         return nullptr;
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+    acp_vulkan::debug_set_object_name(logical_device, module, VK_OBJECT_TYPE_SHADER_MODULE, name);
+#endif
 
     if (module == VK_NULL_HANDLE)
         return nullptr;
@@ -597,7 +605,7 @@ acp_vulkan::shader* acp_vulkan::shader_init(VkDevice logical_device, VkAllocatio
     uint32_t* shader_data = new uint32_t[shader_size];
     fread(shader_data, sizeof(uint32_t), shader_size / sizeof(uint32_t), shader_bytes);
     fclose(shader_bytes);
-    shader* out = shader_init(logical_device, host_allocator, shader_data, shader_size / sizeof(uint32_t));
+    shader* out = shader_init(logical_device, host_allocator, shader_data, shader_size / sizeof(uint32_t), path);
     delete shader_data;
     return out;
 }
@@ -671,6 +679,9 @@ static std::vector<acp_vulkan::program::layout> createDescriptorLayoutsAssumeSha
 
         VkDescriptorSetLayout descriptor_layout = VK_NULL_HANDLE;
         vkCreateDescriptorSetLayout(logical_device, &decriptor_layout_create_info, host_allocator, &descriptor_layout);
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+        acp_vulkan::debug_set_object_name(logical_device, descriptor_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "acp_descriptor_layout");
+#endif
         if (descriptor_layout == VK_NULL_HANDLE)
         {
             for (auto l : out)
@@ -717,6 +728,9 @@ static std::vector<acp_vulkan::program::layout> createDescriptorLayoutsNoSharedS
 
             VkDescriptorSetLayout descriptor_layout = VK_NULL_HANDLE;
             vkCreateDescriptorSetLayout(logical_device, &decriptor_layout_create_info, host_allocator, &descriptor_layout);
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+            acp_vulkan::debug_set_object_name(logical_device, descriptor_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "acp_descriptor_layout");
+#endif
             if (descriptor_layout == VK_NULL_HANDLE)
             {
                 for (auto l : out)
@@ -770,10 +784,14 @@ static pipeline_layout_data create_pipeline_layout(VkDevice logical_device, VkAl
     if (vkCreatePipelineLayout(logical_device, &layout_create_info, host_allocator, &pipeline_layout) != VK_SUCCESS)
         return { {}, VK_NULL_HANDLE };
 
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+    acp_vulkan::debug_set_object_name(logical_device, pipeline_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "acp_pipeline_layout");
+#endif
+
     return {std::move(descriptor_layouts), pipeline_layout};
 }
 
-acp_vulkan::program* acp_vulkan::compute_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const shader* shader, size_t push_constant_size, bool sharedDescriptorSets)
+acp_vulkan::program* acp_vulkan::compute_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const shader* shader, size_t push_constant_size, bool sharedDescriptorSets, const char* name)
 {
     VkComputePipelineCreateInfo create_info{ VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
     //todo(alex) : Use this and the pipeline cache.
@@ -796,6 +814,10 @@ acp_vulkan::program* acp_vulkan::compute_program_init(VkDevice logical_device, V
     VkPipelineCache pipeline_cache = VK_NULL_HANDLE;
     if (vkCreateComputePipelines(logical_device, pipeline_cache, 1, &create_info, host_allocator, &output_pipeline) != VK_SUCCESS)
         return nullptr;
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+    acp_vulkan::debug_set_object_name(logical_device, output_pipeline, VK_OBJECT_TYPE_PIPELINE, name);
+#endif
     if (output_pipeline == VK_NULL_HANDLE)
     {
         vkDestroyPipelineLayout(logical_device, pipeline_layout_data.pipeline_layout, host_allocator);
@@ -809,7 +831,7 @@ acp_vulkan::program* acp_vulkan::compute_program_init(VkDevice logical_device, V
     return out;
 }
 
-acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, shaders shaders, input_attributes vertex_input_attributes, size_t push_constant_size, bool use_depth, bool write_to_depth, bool sharedDescriptorSets, uint32_t color_attachment_count, const VkFormat* color_attachment_formats, VkFormat depth_attachment_format, VkFormat stencil_attachment_format)
+acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, shaders shaders, input_attributes vertex_input_attributes, size_t push_constant_size, bool use_depth, bool write_to_depth, bool sharedDescriptorSets, uint32_t color_attachment_count, const VkFormat* color_attachment_formats, VkFormat depth_attachment_format, VkFormat stencil_attachment_format, const char* name)
 {
     VkGraphicsPipelineCreateInfo create_info{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
     create_info.stageCount = uint32_t(shaders.size());
@@ -1023,6 +1045,10 @@ acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, 
         vkDestroyPipelineLayout(logical_device, pipeline_layout_data.pipeline_layout, host_allocator);
         return nullptr;
     }
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+    acp_vulkan::debug_set_object_name(logical_device, output_pipeline, VK_OBJECT_TYPE_PIPELINE, name);
+#endif
 
     program* out = new program();
     out->pipeline = output_pipeline;

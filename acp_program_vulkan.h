@@ -64,7 +64,7 @@ namespace acp_vulkan
 
     typedef std::initializer_list<const shader*> shaders;
 
-    shader* shader_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const uint32_t* const data, size_t data_size);
+    shader* shader_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const uint32_t* const data, size_t data_size, const char* name);
     shader* shader_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const char* path);
     void shader_destroy(VkDevice logical_device, VkAllocationCallbacks* host_allocator, shader* shader);
 
@@ -90,8 +90,9 @@ namespace acp_vulkan
     program* graphics_program_init(
         VkDevice logical_device, VkAllocationCallbacks* host_allocator, shaders shaders, input_attributes vertex_input_attributes,
         size_t push_constant_size, bool use_depth, bool write_to_depth, bool sharedDescriptorSets,
-        uint32_t color_attachment_count, const VkFormat* color_attachment_formats, VkFormat depth_attachment_format, VkFormat stencil_attachment_format);
+        uint32_t color_attachment_count, const VkFormat* color_attachment_formats,
+        VkFormat depth_attachment_format, VkFormat stencil_attachment_format, const char* name);
     acp_vulkan::program* compute_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const shader* shader, 
-        size_t push_constant_size, bool sharedDescriptorSets);
+        size_t push_constant_size, bool sharedDescriptorSets, const char* name);
     void program_destroy(VkDevice logical_device, VkAllocationCallbacks* host_allocator, program* program);
 };

@@ -161,6 +161,9 @@ const char* extensions[] =
 #ifdef ENABLE_DEBUG_CONSOLE
 	VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #endif
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+#endif
 	nullptr
 };
 

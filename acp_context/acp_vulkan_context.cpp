@@ -7,6 +7,10 @@
 #include <acp_context/acp_vulkan_context_utils.h>
 #include <acp_program_vulkan.h>
 
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+#include <acp_debug_vulkan.h>
+#endif
+
 #define VMA_STATIC_VULKAN_FUNCTIONS 1
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
 #define VMA_IMPLEMENTATION
@@ -246,6 +250,10 @@ static bool create_logical_device(acp_vulkan::renderer_context* context)
 
 	ACP_VK_CHECK(vkCreateDevice(context->physical_device, &create_info, 0, &context->logical_device), context);
 
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_init(context->logical_device);
+#endif
+
 	return context->logical_device != VK_NULL_HANDLE;
 }
 
@@ -307,9 +315,9 @@ static void create_frame_sync_data(acp_vulkan::renderer_context* context)
 	for (size_t i = 0; i < context->swapchain->images.size(); ++i)
 	{
 		acp_vulkan::frame_sync sync{};
-		sync.present_semaphore = acp_vulkan::semaphore_create(context);
-		sync.render_semaphore = acp_vulkan::semaphore_create(context);
-		sync.render_fence = acp_vulkan::fence_create(context, true);
+		sync.present_semaphore = acp_vulkan::semaphore_create(context, "present_semaphore");
+		sync.render_semaphore = acp_vulkan::semaphore_create(context, "render_semaphore");
+		sync.render_fence = acp_vulkan::fence_create(context, true, "render_fence");
 
 		context->frame_syncs.emplace_back(std::move(sync));
 	}
@@ -318,8 +326,8 @@ static void create_frame_sync_data(acp_vulkan::renderer_context* context)
 	for (size_t i = 0; i < context->swapchain->images.size(); ++i)
 	{
 		acp_vulkan::compute_frame_sync sync{};
-		sync.compute_semaphore = acp_vulkan::semaphore_create(context);
-		sync.compute_fence = acp_vulkan::fence_create(context, true);
+		sync.compute_semaphore = acp_vulkan::semaphore_create(context, "compute_semaphore");
+		sync.compute_fence = acp_vulkan::fence_create(context, true, "compute_fence");
 
 		context->compute_frame_syncs.emplace_back(std::move(sync));
 	}
@@ -405,8 +413,8 @@ acp_vulkan::renderer_context* acp_vulkan::renderer_init(const renderer_init_cont
 	out->current_frame = 0;
 	out->max_frames = out->frame_syncs.size();
 
-	out->imediate_commands_pools.push_back(commands_pool_crate(out));
-	out->imediate_commands_fences.push_back(fence_create(out, false));
+	out->imediate_commands_pools.push_back(commands_pool_crate(out, "imediate_commands_pool"));
+	out->imediate_commands_fences.push_back(fence_create(out, false, "imediate_commands_fences"));
 
 	if (!out->user_context.renderer_init(out))
 		goto ERROR;

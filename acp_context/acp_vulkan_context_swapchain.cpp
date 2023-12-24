@@ -82,7 +82,7 @@ std::vector<VkImageView> create_image_views(acp_vulkan::renderer_context* contex
 
 	std::vector<VkImageView> out;
 	for (uint32_t i = 0; i < images.size(); ++i)
-		out.push_back(image_view_create(context, images[i], context->swapchain_format, 0, 1, VK_IMAGE_ASPECT_COLOR_BIT));
+		out.push_back(image_view_create(context, images[i], context->swapchain_format, 0, 1, VK_IMAGE_ASPECT_COLOR_BIT, "swapchain_image_views"));
 
 	return out;
 }
@@ -91,7 +91,7 @@ std::vector<VkImageView> create_depth_image_views(acp_vulkan::renderer_context* 
 {
 	std::vector<VkImageView> out;
 	for (uint32_t i = 0; i < images.size(); ++i)
-		out.push_back(image_view_create(context, images[i].image, context->depth_format, 0, 1, VK_IMAGE_ASPECT_DEPTH_BIT));
+		out.push_back(image_view_create(context, images[i].image, context->depth_format, 0, 1, VK_IMAGE_ASPECT_DEPTH_BIT, "depth_image_views"));
 
 	return out;
 }
@@ -100,7 +100,7 @@ std::vector<acp_vulkan::image_data> create_depth_images(acp_vulkan::renderer_con
 {
 	std::vector<acp_vulkan::image_data> out;
 	for (size_t i = 0; i < image_count; ++i)
-		out.push_back(acp_vulkan::image_create(context, swapchain->width, swapchain->height, 1, context->depth_format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE));
+		out.push_back(acp_vulkan::image_create(context, swapchain->width, swapchain->height, 1, context->depth_format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, "depth_images"));
 
 	return out;
 }

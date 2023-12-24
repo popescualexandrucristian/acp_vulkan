@@ -2,7 +2,11 @@
 #include <acp_context/acp_vulkan_context_utils.h>
 #include <vma/vk_mem_alloc.h>
 
-VkCommandPool acp_vulkan::commands_pool_crate(renderer_context* renderer_context)
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+#include "acp_debug_vulkan.h"
+#endif
+
+VkCommandPool acp_vulkan::commands_pool_crate(renderer_context* renderer_context, const char* name)
 {
 	VkCommandPoolCreateInfo vkCommandPoolCreateInfo{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
 	vkCommandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -10,6 +14,11 @@ VkCommandPool acp_vulkan::commands_pool_crate(renderer_context* renderer_context
 
 	VkCommandPool out = VK_NULL_HANDLE;
 	ACP_VK_CHECK(vkCreateCommandPool(renderer_context->logical_device, &vkCommandPoolCreateInfo, renderer_context->host_allocator, &out), renderer_context);
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_set_object_name(renderer_context->logical_device, out, VK_OBJECT_TYPE_COMMAND_POOL, name);
+#endif
+
 	return out;
 }
 
@@ -23,12 +32,16 @@ void acp_vulkan::commands_pool_destroy(renderer_context* renderer_context, VkCom
 	vkDestroyCommandPool(renderer_context->logical_device, commands_pool, renderer_context->host_allocator);
 }
 
-VkSemaphore acp_vulkan::semaphore_create(renderer_context* renderer_context)
+VkSemaphore acp_vulkan::semaphore_create(renderer_context* renderer_context, const char* name)
 {
 	VkSemaphoreCreateInfo createInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
 
 	VkSemaphore semaphore = 0;
 	ACP_VK_CHECK(vkCreateSemaphore(renderer_context->logical_device, &createInfo, 0, &semaphore), renderer_context);
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_set_object_name(renderer_context->logical_device, semaphore, VK_OBJECT_TYPE_SEMAPHORE, name);
+#endif
 
 	return semaphore;
 }
@@ -41,7 +54,7 @@ void acp_vulkan::semaphore_destroy(renderer_context* renderer_context, VkSemapho
 	vkDestroySemaphore(renderer_context->logical_device, semaphore, renderer_context->host_allocator);
 }
 
-VkDescriptorPool acp_vulkan::descriptor_pool_create(renderer_context* renderer_context, uint32_t max_descriptor_count)
+VkDescriptorPool acp_vulkan::descriptor_pool_create(renderer_context* renderer_context, uint32_t max_descriptor_count, const char* name)
 {
 	VkDescriptorPoolCreateInfo info{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
 
@@ -61,6 +74,11 @@ VkDescriptorPool acp_vulkan::descriptor_pool_create(renderer_context* renderer_c
 
 	VkDescriptorPool out = VK_NULL_HANDLE;
 	ACP_VK_CHECK(vkCreateDescriptorPool(renderer_context->logical_device, &info, renderer_context->host_allocator, &out), renderer_context);
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_set_object_name(renderer_context->logical_device, out, VK_OBJECT_TYPE_DESCRIPTOR_POOL, name);
+#endif
+
 	return out;
 }
 
@@ -72,7 +90,7 @@ void acp_vulkan::descriptor_pool_destroy(acp_vulkan::renderer_context* renderer_
 	vkDestroyDescriptorPool(renderer_context->logical_device, descriptor_pool, renderer_context->host_allocator);
 }
 
-VkImageView acp_vulkan::image_view_create(renderer_context* renderer_context, VkImage image, VkFormat format, uint32_t mip_level, uint32_t level_count, VkImageAspectFlags aspectMask)
+VkImageView acp_vulkan::image_view_create(renderer_context* renderer_context, VkImage image, VkFormat format, uint32_t mip_level, uint32_t level_count, VkImageAspectFlags aspectMask, const char* name)
 {
 	VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 	createInfo.image = image;
@@ -86,6 +104,10 @@ VkImageView acp_vulkan::image_view_create(renderer_context* renderer_context, Vk
 	VkImageView view = 0;
 	ACP_VK_CHECK(vkCreateImageView(renderer_context->logical_device, &createInfo, renderer_context->host_allocator, &view), renderer_context);
 
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_set_object_name(renderer_context->logical_device, view, VK_OBJECT_TYPE_IMAGE_VIEW, name);
+#endif
+
 	return view;
 }
 
@@ -94,7 +116,7 @@ void acp_vulkan::image_view_destroy(renderer_context* renderer_context, VkImageV
 	vkDestroyImageView(renderer_context->logical_device, image_view, renderer_context->host_allocator);
 }
 
-acp_vulkan::image_data acp_vulkan::image_create(renderer_context* renderer_context, uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage, VmaMemoryUsage memory_usage)
+acp_vulkan::image_data acp_vulkan::image_create(renderer_context* renderer_context, uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage, VmaMemoryUsage memory_usage, const char* name)
 {
 	VkImageCreateInfo info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
 
@@ -115,6 +137,10 @@ acp_vulkan::image_data acp_vulkan::image_create(renderer_context* renderer_conte
 	allocation_info.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	ACP_VK_CHECK(vmaCreateImage(renderer_context->gpu_allocator, &info, &allocation_info, &image.image, &image.memory_allocation, nullptr),renderer_context);
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_set_object_name(renderer_context->logical_device, image.image, VK_OBJECT_TYPE_IMAGE, name);
+#endif
 	
 	return image;
 }
@@ -124,7 +150,7 @@ void acp_vulkan::image_destroy(renderer_context* renderer_context, image_data im
 	vmaDestroyImage(renderer_context->gpu_allocator, image_data.image, image_data.memory_allocation);
 }
 
-VkFence acp_vulkan::fence_create(renderer_context* renderer_context, bool create_signaled)
+VkFence acp_vulkan::fence_create(renderer_context* renderer_context, bool create_signaled, const char* name)
 {
 	VkFenceCreateInfo info{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
 	if (create_signaled)
@@ -132,6 +158,10 @@ VkFence acp_vulkan::fence_create(renderer_context* renderer_context, bool create
 
 	VkFence out = VK_NULL_HANDLE;
 	ACP_VK_CHECK(vkCreateFence(renderer_context->logical_device, &info, renderer_context->host_allocator, &out), renderer_context);
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_set_object_name(renderer_context->logical_device, out, VK_OBJECT_TYPE_FENCE, name);
+#endif
 
 	return out;
 }
@@ -141,7 +171,7 @@ void acp_vulkan::fence_destroy(renderer_context* renderer_context, VkFence fence
 	vkDestroyFence(renderer_context->logical_device, fence, renderer_context->host_allocator);
 }
 
-VkSampler acp_vulkan::create_linear_sampler(renderer_context* renderer_context)
+VkSampler acp_vulkan::create_linear_sampler(renderer_context* renderer_context, const char* name)
 {
 	VkSamplerCreateInfo sampler_info = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
 	sampler_info.magFilter = VK_FILTER_LINEAR;
@@ -159,6 +189,11 @@ VkSampler acp_vulkan::create_linear_sampler(renderer_context* renderer_context)
 	sampler_info.unnormalizedCoordinates = VK_FALSE;
 	VkSampler sampler = VK_NULL_HANDLE;
 	ACP_VK_CHECK(vkCreateSampler(renderer_context->logical_device, &sampler_info, renderer_context->host_allocator, &sampler), renderer_context);
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_set_object_name(renderer_context->logical_device, sampler, VK_OBJECT_TYPE_SAMPLER, name);
+#endif
+
 	return sampler;
 }
 
@@ -200,8 +235,8 @@ void acp_vulkan::push_pipeline_barrier(VkCommandBuffer commandBuffer, VkDependen
 	vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 }
 
-//alex(todo): this is suboptimal as fuck but it will do for now, should upload data properly.
-acp_vulkan::buffer_data acp_vulkan::upload_data(renderer_context* context, void* verts, uint32_t num_vertices, uint32_t one_vertex_size, VkBufferUsageFlagBits usage)
+//alex(todo): This is suboptimal, should be split in to create, update + create stageing.
+acp_vulkan::buffer_data acp_vulkan::upload_data(renderer_context* context, void* verts, uint32_t num_vertices, uint32_t one_vertex_size, VkBufferUsageFlagBits usage, const char* name)
 {
 	buffer_data staging_buffer{};
 	{
@@ -254,10 +289,14 @@ acp_vulkan::buffer_data acp_vulkan::upload_data(renderer_context* context, void*
 
 	vmaDestroyBuffer(context->gpu_allocator, staging_buffer.buffer, staging_buffer.allocation);
 
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_set_object_name(context->logical_device, out.buffer, VK_OBJECT_TYPE_BUFFER, name);
+#endif
+
 	return out;
 }
 
-acp_vulkan::image_data acp_vulkan::upload_image(renderer_context* context, image_mip_data* image_mip_data, const VkImageCreateInfo& image_info)
+acp_vulkan::image_data acp_vulkan::upload_image(renderer_context* context, image_mip_data* image_mip_data, const VkImageCreateInfo& image_info, const char* name)
 {
 	size_t total_size = 0;
 	for (size_t ii = 0; ii < image_info.mipLevels; ++ii)
@@ -362,6 +401,10 @@ acp_vulkan::image_data acp_vulkan::upload_image(renderer_context* context, image
 		});
 
 	vmaDestroyBuffer(context->gpu_allocator, staging_buffer.buffer, staging_buffer.allocation);
+
+#ifdef ENABLE_VULKAN_DEBUG_MARKERS
+	acp_vulkan::debug_set_object_name(context->logical_device, new_image.image, VK_OBJECT_TYPE_IMAGE, name);
+#endif
 
 	return new_image;
 }
