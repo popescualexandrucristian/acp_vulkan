@@ -646,7 +646,7 @@ static std::vector<acp_vulkan::program::layout> createDescriptorLayoutsAssumeSha
                     new_binding.binding = binding.binding;
                     new_binding.descriptorType = binding.resource_type;
                     new_binding.stageFlags = shader->type;
-                    new_binding.descriptorCount = 1;// todo(alex) : parse this in the shader.
+                    new_binding.descriptorCount = 1;// todo(alex) : Parse this in the shader.
                     bindings.emplace_back(std::move(new_binding));
                     currentBinding = &bindings[bindings.size() - 1];
                 }
@@ -658,7 +658,7 @@ static std::vector<acp_vulkan::program::layout> createDescriptorLayoutsAssumeSha
 
                 currentBinding->stageFlags |= shader->type;
 
-                //todo(alex) : set the descriptor count to the highest value of the bindings.
+                //todo(alex) : Set the descriptor count to the highest value of the bindings.
 
                 if (currentBinding->descriptorType != binding.resource_type)
                     return out;
@@ -706,7 +706,7 @@ static std::vector<acp_vulkan::program::layout> createDescriptorLayoutsNoSharedS
                     new_binding.binding = binding.binding;
                     new_binding.descriptorType = binding.resource_type;
                     new_binding.stageFlags = shader->type;
-                    new_binding.descriptorCount = 1;// todo(alex) : parse this in the shader
+                    new_binding.descriptorCount = 1;// todo(alex) : Parse this in the shader.
                     bindings.emplace_back(std::move(new_binding));
                 }
             }
@@ -776,7 +776,7 @@ static pipeline_layout_data create_pipeline_layout(VkDevice logical_device, VkAl
 acp_vulkan::program* acp_vulkan::compute_program_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const shader* shader, size_t push_constant_size, bool sharedDescriptorSets)
 {
     VkComputePipelineCreateInfo create_info{ VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
-    //todo(alex) : Use this and the pipeline cache
+    //todo(alex) : Use this and the pipeline cache.
     create_info.basePipelineHandle = VK_NULL_HANDLE;
     create_info.basePipelineIndex = 0;
     create_info.flags = 0;
@@ -844,7 +844,7 @@ acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, 
                 {
                     for (uint32_t ii = 0; ii < vertex_input_attribute.locations.size(); ++ii)
                     {
-                        //todo(alex): check that the user provided locations are valid
+                        //todo(alex): Check that the user provided locations are valid.
                         if (shader_usage_attribute.location == vertex_input_attribute.locations[ii])
                         {
                             VkVertexInputAttributeDescription attribute_description{};
@@ -853,7 +853,7 @@ acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, 
                             attribute_description.location = vertex_input_attribute.locations[ii];
                             switch (shader_usage_attribute.field_type)
                             {
-                            //todo(alex) : check that bools are actualy transfered as signed ints, this is what I remember
+                            //todo(alex) : Check that bools are actualy transfered as signed ints, this is what I remember.
                             case shader::meta::type::bool_type:
                                 attribute_description.format = VK_FORMAT_R32_UINT;
                                 break;
@@ -942,13 +942,13 @@ acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, 
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_create_info{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
     input_assembly_create_info.primitiveRestartEnable = false;
-    //todo(alex): add an option to support other primitive topology types.
+    //todo(alex): Add an option to support other primitive topology types.
     input_assembly_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     create_info.pInputAssemblyState = &input_assembly_create_info;
 
     create_info.pTessellationState = VK_NULL_HANDLE;
 
-    //using dynamic state, this is here so we can pass validation.
+    //Using dynamic state, this is here so we can pass validation.
     VkPipelineViewportStateCreateInfo viewport_create_info{ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
     viewport_create_info.viewportCount = 1;
     VkViewport viewport{};
@@ -963,7 +963,7 @@ acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, 
     create_info.pRasterizationState = &resterization_create_info;
 
     VkPipelineMultisampleStateCreateInfo multisample_create_info{ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
-    multisample_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;//todo(alex) : turn aa in to an option
+    multisample_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;//todo(alex) : AA as options.
     create_info.pMultisampleState = &multisample_create_info;
 
     VkPipelineDepthStencilStateCreateInfo depth_create_info{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
@@ -1008,7 +1008,7 @@ acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, 
 
     create_info.layout = pipeline_layout_data.pipeline_layout;
 
-    //todo(alex) : Use this and the pipeline cache
+    //todo(alex) : Use this and the pipeline cache.
     create_info.renderPass = VK_NULL_HANDLE;
     create_info.subpass = 0;
     create_info.basePipelineHandle = VK_NULL_HANDLE;

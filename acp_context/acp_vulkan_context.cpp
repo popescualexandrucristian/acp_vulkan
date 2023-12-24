@@ -109,7 +109,7 @@ static bool create_instance(acp_vulkan::renderer_context* context, bool use_vali
 	return context->instance != VK_NULL_HANDLE;
 }
 
-static uint32_t get_graphics_family_index(VkPhysicalDevice physical_device)
+static uint32_t get_queue_family_index(VkPhysicalDevice physical_device, VkQueueFlagBits type)
 {
 	uint32_t queue_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_count, 0);
@@ -118,7 +118,7 @@ static uint32_t get_graphics_family_index(VkPhysicalDevice physical_device)
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_count, queues.data());
 
 	for (uint32_t i = 0; i < queue_count; ++i)
-		if (queues[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+		if (queues[i].queueFlags & type)
 			return i;
 
 	return VK_QUEUE_FAMILY_IGNORED;
@@ -127,20 +127,26 @@ static uint32_t get_graphics_family_index(VkPhysicalDevice physical_device)
 static bool pick_physical_device(acp_vulkan::renderer_context* context, VkPhysicalDevice* physical_devices, uint32_t physical_devices_count)
 {
 	VkPhysicalDevice preferred = 0;
-	uint32_t preferred_family_index = 0;
+	uint32_t preferred_graphics_family_index = 0;
+	uint32_t preferred_compute_family_index = 0;
 	VkPhysicalDevice fallback = 0;
-	uint32_t fallback_family_index = 0;
+	uint32_t fallback_graphics_family_index = 0;
+	uint32_t fallback_compute_family_index = 0;
 
 	for (uint32_t i = 0; i < physical_devices_count; ++i)
 	{
 		VkPhysicalDeviceProperties props;
 		vkGetPhysicalDeviceProperties(physical_devices[i], &props);
 
-		uint32_t family_index = get_graphics_family_index(physical_devices[i]);
-		if (family_index == VK_QUEUE_FAMILY_IGNORED)
+		uint32_t graphics_family_index = get_queue_family_index(physical_devices[i], VK_QUEUE_GRAPHICS_BIT);
+		if (graphics_family_index == VK_QUEUE_FAMILY_IGNORED)
 			continue;
 
-		if (!acp_vulkan_os_specific_get_renderer_device_supports_presentation(physical_devices[i], family_index))
+		uint32_t compute_family_index = get_queue_family_index(physical_devices[i], VK_QUEUE_COMPUTE_BIT);
+		if (compute_family_index == VK_QUEUE_FAMILY_IGNORED)
+			continue;
+
+		if (!acp_vulkan_os_specific_get_renderer_device_supports_presentation(physical_devices[i], graphics_family_index))
 			continue;
 
 		if (props.apiVersion < VK_API_VERSION_1_3)
@@ -149,13 +155,15 @@ static bool pick_physical_device(acp_vulkan::renderer_context* context, VkPhysic
 		if (!preferred && props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
 		{
 			preferred = physical_devices[i];
-			preferred_family_index = family_index;
+			preferred_graphics_family_index = graphics_family_index;
+			preferred_compute_family_index = compute_family_index;
 		}
 
 		if (!fallback)
 		{
 			fallback = physical_devices[i];
-			fallback_family_index = fallback_family_index;
+			fallback_graphics_family_index = graphics_family_index;
+			fallback_compute_family_index = compute_family_index;
 		}
 	}
 
@@ -163,7 +171,8 @@ static bool pick_physical_device(acp_vulkan::renderer_context* context, VkPhysic
 		return false;
 
 	context->physical_device = preferred ? preferred : fallback;
-	context->graphics_family_index = preferred ? preferred_family_index : fallback_family_index;
+	context->graphics_family_index = preferred ? preferred_graphics_family_index : fallback_graphics_family_index;
+	context->compute_family_index = preferred ? preferred_compute_family_index : fallback_compute_family_index;
 
 	VkPhysicalDeviceProperties props;
 	vkGetPhysicalDeviceProperties(context->physical_device, &props);
@@ -184,6 +193,9 @@ static bool select_physical_device(acp_vulkan::renderer_context* context)
 
 static bool create_logical_device(acp_vulkan::renderer_context* context)
 {
+	//todo(alex) : Implement support for separate compute and graphics device
+	assert(context->graphics_family_index == context->compute_family_index && "Not implemented");
+
 	float queuePriorities[] = { 1.0f };
 
 	VkDeviceQueueCreateInfo queue_info = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
@@ -222,6 +234,7 @@ static bool create_logical_device(acp_vulkan::renderer_context* context)
 	VkDeviceCreateInfo create_info = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
 	create_info.queueCreateInfoCount = 1;
 	create_info.pQueueCreateInfos = &queue_info;
+
 
 	create_info.ppEnabledExtensionNames = extensions;
 	create_info.enabledExtensionCount = sizeof(extensions)/sizeof(extensions[0]);
@@ -300,6 +313,16 @@ static void create_frame_sync_data(acp_vulkan::renderer_context* context)
 
 		context->frame_syncs.emplace_back(std::move(sync));
 	}
+
+	context->compute_frame_syncs.clear();
+	for (size_t i = 0; i < context->swapchain->images.size(); ++i)
+	{
+		acp_vulkan::compute_frame_sync sync{};
+		sync.compute_semaphore = acp_vulkan::semaphore_create(context);
+		sync.compute_fence = acp_vulkan::fence_create(context, true);
+
+		context->compute_frame_syncs.emplace_back(std::move(sync));
+	}
 }
 
 static void destroy_frame_sync_data(acp_vulkan::renderer_context* context)
@@ -311,6 +334,13 @@ static void destroy_frame_sync_data(acp_vulkan::renderer_context* context)
 		acp_vulkan::fence_destroy(context, context->frame_syncs[i].render_fence);
 	}
 	context->frame_syncs.clear();
+
+	for (size_t i = 0; i < context->compute_frame_syncs.size(); ++i)
+	{
+		acp_vulkan::semaphore_destroy(context, context->compute_frame_syncs[i].compute_semaphore);
+		acp_vulkan::fence_destroy(context, context->compute_frame_syncs[i].compute_fence);
+	}
+	context->compute_frame_syncs.clear();
 }
 
 acp_vulkan::renderer_context* acp_vulkan::renderer_init(const renderer_init_context& init_context)
@@ -340,6 +370,8 @@ acp_vulkan::renderer_context* acp_vulkan::renderer_init(const renderer_init_cont
 		goto ERROR;
 
 	vkGetDeviceQueue(out->logical_device, out->graphics_family_index, 0, &out->graphics_queue);
+	//todo(alex) : Implement support for separate compute and graphics device
+	out->compute_queue = out->graphics_queue;
 
 	out->surface = acp_vulkan_os_specific_create_renderer_surface(out->instance);
 	if (out->surface == VK_NULL_HANDLE)
@@ -448,6 +480,9 @@ bool acp_vulkan::renderer_update(acp_vulkan::renderer_context* context, double d
 		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	}
 
+	acp_vulkan::compute_frame_sync& compute_sync = context->compute_frame_syncs[current_frame];
+	vkWaitForFences(context->logical_device, 1, &compute_sync.compute_fence, VK_TRUE, UINT64_MAX);
+
 	return context->user_context.renderer_update(context, current_frame, color_attachment, depth_attachment, delta_time);
 }
 
@@ -475,7 +510,21 @@ void acp_vulkan::renderer_start_main_pass(VkCommandBuffer command_buffer, render
 	vkCmdBeginRendering(command_buffer, &pass_info);
 }
 
-void acp_vulkan::renderer_end_main_pass(VkCommandBuffer command_buffer, acp_vulkan::renderer_context* context)
+void acp_vulkan::renderer_end_main_compute_pass(VkCommandBuffer command_buffer, acp_vulkan::renderer_context* context)
+{
+	size_t current_frame = context->current_frame % context->max_frames;
+	acp_vulkan::compute_frame_sync& sync = context->compute_frame_syncs[current_frame];
+	vkResetFences(context->logical_device, 1, &sync.compute_fence);
+
+	VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &command_buffer;
+	submit_info.pSignalSemaphores = &sync.compute_semaphore;
+	submit_info.signalSemaphoreCount = 1;
+	vkQueueSubmit(context->compute_queue, 1, &submit_info, sync.compute_fence);
+}
+
+void acp_vulkan::renderer_end_main_pass(VkCommandBuffer command_buffer, acp_vulkan::renderer_context* context, bool wait_for_compute)
 {
 	size_t current_frame = context->current_frame % context->max_frames;
 	acp_vulkan::frame_sync& sync = context->frame_syncs[current_frame];
@@ -497,12 +546,24 @@ void acp_vulkan::renderer_end_main_pass(VkCommandBuffer command_buffer, acp_vulk
 	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit.pNext = nullptr;
 
+	VkPipelineStageFlags waitStagesWithCompute[] = { VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
-	submit.pWaitDstStageMask = &waitStage;
 
-	submit.waitSemaphoreCount = 1;
-	submit.pWaitSemaphores = &sync.present_semaphore;
+	acp_vulkan::compute_frame_sync& compute_sync = context->compute_frame_syncs[current_frame];
+	VkSemaphore wait_semaphores[2] = {sync.present_semaphore, compute_sync.compute_semaphore};
+	if (wait_for_compute)
+	{
+		submit.waitSemaphoreCount = 2;
+		submit.pWaitSemaphores = wait_semaphores;
+		submit.pWaitDstStageMask = waitStagesWithCompute;
+	}
+	else
+	{
+		submit.waitSemaphoreCount = 1;
+		submit.pWaitSemaphores = &sync.present_semaphore;
+		submit.pWaitDstStageMask = &waitStage;
+	}
 
 	submit.signalSemaphoreCount = 1;
 	submit.pSignalSemaphores = &sync.render_semaphore;

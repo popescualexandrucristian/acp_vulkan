@@ -200,8 +200,6 @@ bool acp_vulkan::swapchian_update(swapchain* swapchain, renderer_context* contex
 
 	vkDestroySwapchainKHR(context->logical_device, old_swapchain, context->host_allocator);
 
-	//todo(Alex) : image views for the swapchain
-
 	ACP_VK_CHECK(vkDeviceWaitIdle(context->logical_device), context);
 	return true;
 }

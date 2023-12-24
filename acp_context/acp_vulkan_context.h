@@ -12,6 +12,12 @@ namespace acp_vulkan
 		VkSemaphore present_semaphore;
 	};
 
+	struct compute_frame_sync
+	{
+		VkFence compute_fence;
+		VkSemaphore compute_semaphore;
+	};
+
 	struct swapchain;
 
 	struct renderer_context
@@ -22,6 +28,7 @@ namespace acp_vulkan
 		VkDebugReportCallbackEXT callback_extension;
 		VkPhysicalDevice physical_device;
 		uint32_t graphics_family_index;
+		uint32_t compute_family_index;
 		VkDevice logical_device;
 		VkSurfaceKHR surface;
 		VkFormat swapchain_format;
@@ -30,11 +37,14 @@ namespace acp_vulkan
 		VmaAllocator gpu_allocator;
 
 		std::vector<frame_sync> frame_syncs;
+		std::vector<compute_frame_sync> compute_frame_syncs;
+		
 		size_t max_frames;
 		size_t current_frame;
 		uint32_t next_image_index;
 
 		VkQueue graphics_queue;
+		VkQueue compute_queue;
 
 		std::vector<VkCommandPool> imediate_commands_pools;
 		std::vector<VkFence> imediate_commands_fences;
@@ -76,7 +86,8 @@ namespace acp_vulkan
 	bool renderer_resize(renderer_context* context, uint32_t width, uint32_t height);
 	bool renderer_update(acp_vulkan::renderer_context* context, double delta_time);
 	void renderer_start_main_pass(VkCommandBuffer command_buffer, acp_vulkan::renderer_context* context, VkRenderingAttachmentInfo color_attachment, VkRenderingAttachmentInfo depth_attachment);
-	void renderer_end_main_pass(VkCommandBuffer command_buffer, acp_vulkan::renderer_context* context);
+	void renderer_end_main_pass(VkCommandBuffer command_buffer, acp_vulkan::renderer_context* context, bool wait_for_compute);
+	void renderer_end_main_compute_pass(VkCommandBuffer command_buffer, acp_vulkan::renderer_context* context);
 
 	void immediate_submit(renderer_context* context, std::function<void(VkCommandBuffer cmd)>&& function);
 	uint32_t acquire_next_image(swapchain* swapchain, renderer_context* context, VkFence fence, VkSemaphore semaphore);
