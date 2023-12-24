@@ -12,7 +12,8 @@ Parse Vulkan shader files and return a shader structure that contains the shader
     VkDevice logical_device, 
     VkAllocationCallbacks* host_allocator, 
     const uint32_t* const data, 
-    size_t data_size);
+    size_t data_size,
+	const char* name);
 ``` 
 ```
     shader* shader_init(VkDevice logical_device, VkAllocationCallbacks* host_allocator, const char* path);
@@ -72,17 +73,25 @@ Note :
   	 * Layout cache shoul be added. (probably the last 2 should be one object or something idk) 
 ```
 //If vertex streams are used we need some extra information that can't be deduced from shaders.
-//This info comes in a list of input_attribute_data
+//This info comes in a list of input_attribute_data, this is optional and only needed if the input attributes are used in the vertex shader.
 struct input_attribute_data
 {
-    uint32_t			binding;
+    uint32_t				binding;
     std::vector<uint32_t>	offsets;
     std::vector<uint32_t>	locations;
-    uint32_t			stride;
+    uint32_t				stride;
     VkVertexInputRate		input_rate;
 };
 
-graphics_program* graphics_program_init(
+struct program
+{
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
+    typedef std::pair<VkDescriptorSetLayout, std::vector<VkDescriptorSetLayoutBinding>> layout;
+    std::vector<layout> descriptor_layouts;
+};
+
+program* graphics_program_init(
         VkDevice logical_device, 
         VkAllocationCallbacks* host_allocator, 
         shaders shaders, 
@@ -92,9 +101,20 @@ graphics_program* graphics_program_init(
         bool write_to_depth, 
         bool sharedDescriptorSets,
         uint32_t color_attachment_count, 
-        const VkFormat* color_attachment_formats, |
+        const VkFormat* color_attachment_formats,
         VkFormat depth_attachment_format, 
-        VkFormat stencil_attachment_format);
+        VkFormat stencil_attachment_format,
+		const char* name);
+```
+
+```
+program* compute_program_init(
+		VkDevice logical_device, 
+		VkAllocationCallbacks* host_allocator, 
+		const shader* shader, 
+        size_t push_constant_size, 
+		bool sharedDescriptorSets, 
+		const char* name);
 ```
 
 Deallocate a pipeline, it's layout and it's descriptor layouts + the metadata.
@@ -108,7 +128,7 @@ Deallocate a pipeline, it's layout and it's descriptor layouts + the metadata.
 Utility that parses dds files or data to generate Vulkan ready image data.
 
 ```
-struct image_mip_data
+	struct image_mip_data
 	{
 		VkExtent3D extents{}; // size of the mip level.
 		uint8_t* data{ nullptr }; // data for the mip level.
