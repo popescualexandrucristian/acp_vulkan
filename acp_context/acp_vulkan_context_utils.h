@@ -25,7 +25,7 @@ namespace acp_vulkan
 {	
 	struct renderer_context;
 
-	VkCommandPool commands_pool_crate(acp_vulkan::renderer_context* renderer_context, const char* name);
+	VkCommandPool commands_pool_crate(acp_vulkan::renderer_context* renderer_context, uint32_t target_queue_index, const char* name);
 	void commands_pool_destroy(acp_vulkan::renderer_context* renderer_context, VkCommandPool commands_pool);
 
 	VkSemaphore semaphore_create(acp_vulkan::renderer_context* renderer_context, const char* name);

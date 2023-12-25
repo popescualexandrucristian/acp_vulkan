@@ -113,7 +113,7 @@ static bool create_instance(acp_vulkan::renderer_context* context, bool use_vali
 	return context->instance != VK_NULL_HANDLE;
 }
 
-static uint32_t get_queue_family_index(VkPhysicalDevice physical_device, VkQueueFlagBits type)
+static uint32_t get_queue_family_index(VkPhysicalDevice physical_device, VkQueueFlagBits type, std::initializer_list<uint32_t> ignore_queues)
 {
 	uint32_t queue_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_count, 0);
@@ -122,8 +122,13 @@ static uint32_t get_queue_family_index(VkPhysicalDevice physical_device, VkQueue
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_count, queues.data());
 
 	for (uint32_t i = 0; i < queue_count; ++i)
+	{
+		if(std::find(ignore_queues.begin(), ignore_queues.end(), i) != ignore_queues.end())
+			continue;
+
 		if (queues[i].queueFlags & type)
 			return i;
+	}
 
 	return VK_QUEUE_FAMILY_IGNORED;
 }
@@ -142,11 +147,14 @@ static bool pick_physical_device(acp_vulkan::renderer_context* context, VkPhysic
 		VkPhysicalDeviceProperties props;
 		vkGetPhysicalDeviceProperties(physical_devices[i], &props);
 
-		uint32_t graphics_family_index = get_queue_family_index(physical_devices[i], VK_QUEUE_GRAPHICS_BIT);
+		uint32_t graphics_family_index = get_queue_family_index(physical_devices[i], VK_QUEUE_GRAPHICS_BIT, {});
 		if (graphics_family_index == VK_QUEUE_FAMILY_IGNORED)
 			continue;
 
-		uint32_t compute_family_index = get_queue_family_index(physical_devices[i], VK_QUEUE_COMPUTE_BIT);
+		uint32_t compute_family_index = get_queue_family_index(physical_devices[i], VK_QUEUE_COMPUTE_BIT, { graphics_family_index, fallback ? fallback_graphics_family_index : UINT32_MAX });
+		if (compute_family_index == VK_QUEUE_FAMILY_IGNORED)
+			compute_family_index = get_queue_family_index(physical_devices[i], VK_QUEUE_COMPUTE_BIT, {});
+		
 		if (compute_family_index == VK_QUEUE_FAMILY_IGNORED)
 			continue;
 
@@ -197,15 +205,17 @@ static bool select_physical_device(acp_vulkan::renderer_context* context)
 
 static bool create_logical_device(acp_vulkan::renderer_context* context)
 {
-	//todo(alex) : Implement support for separate compute and graphics device
-	assert(context->graphics_family_index == context->compute_family_index && "Not implemented");
-
 	float queuePriorities[] = { 1.0f };
 
-	VkDeviceQueueCreateInfo queue_info = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
-	queue_info.queueFamilyIndex = context->graphics_family_index;
-	queue_info.queueCount = 1;
-	queue_info.pQueuePriorities = queuePriorities;
+	VkDeviceQueueCreateInfo graphics_queue_info = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
+	graphics_queue_info.queueFamilyIndex = context->graphics_family_index;
+	graphics_queue_info.queueCount = 1;
+	graphics_queue_info.pQueuePriorities = queuePriorities;
+
+	VkDeviceQueueCreateInfo compute_queue_info = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
+	compute_queue_info.queueFamilyIndex = context->compute_family_index;
+	compute_queue_info.queueCount = 1;
+	compute_queue_info.pQueuePriorities = queuePriorities;
 
 	const char* extensions[] =
 	{
@@ -236,9 +246,17 @@ static bool create_logical_device(acp_vulkan::renderer_context* context)
 	features13.synchronization2 = true;
 
 	VkDeviceCreateInfo create_info = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
-	create_info.queueCreateInfoCount = 1;
-	create_info.pQueueCreateInfos = &queue_info;
-
+	VkDeviceQueueCreateInfo queue_info[] = {graphics_queue_info, compute_queue_info};
+	if (graphics_queue_info.queueFamilyIndex != compute_queue_info.queueFamilyIndex)
+	{
+		create_info.queueCreateInfoCount = 2;
+		create_info.pQueueCreateInfos = queue_info;
+	}
+	else
+	{
+		create_info.queueCreateInfoCount = 1;
+		create_info.pQueueCreateInfos = &graphics_queue_info;
+	}
 
 	create_info.ppEnabledExtensionNames = extensions;
 	create_info.enabledExtensionCount = sizeof(extensions)/sizeof(extensions[0]);
@@ -378,8 +396,7 @@ acp_vulkan::renderer_context* acp_vulkan::renderer_init(const renderer_init_cont
 		goto ERROR;
 
 	vkGetDeviceQueue(out->logical_device, out->graphics_family_index, 0, &out->graphics_queue);
-	//todo(alex) : Implement support for separate compute and graphics device
-	out->compute_queue = out->graphics_queue;
+	vkGetDeviceQueue(out->logical_device, out->compute_family_index, 0, &out->compute_queue);
 
 	out->surface = acp_vulkan_os_specific_create_renderer_surface(out->instance);
 	if (out->surface == VK_NULL_HANDLE)
@@ -413,7 +430,8 @@ acp_vulkan::renderer_context* acp_vulkan::renderer_init(const renderer_init_cont
 	out->current_frame = 0;
 	out->max_frames = out->frame_syncs.size();
 
-	out->imediate_commands_pools.push_back(commands_pool_crate(out, "imediate_commands_pool"));
+	//todo(alex) : Maybe also think about using the transfer queue, maybe it is different idk.
+	out->imediate_commands_pools.push_back(commands_pool_crate(out, out->graphics_family_index, "imediate_commands_pool"));
 	out->imediate_commands_fences.push_back(fence_create(out, false, "imediate_commands_fences"));
 
 	if (!out->user_context.renderer_init(out))

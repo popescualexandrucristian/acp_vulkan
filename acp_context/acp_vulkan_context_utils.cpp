@@ -6,11 +6,11 @@
 #include "acp_debug_vulkan.h"
 #endif
 
-VkCommandPool acp_vulkan::commands_pool_crate(renderer_context* renderer_context, const char* name)
+VkCommandPool acp_vulkan::commands_pool_crate(renderer_context* renderer_context, uint32_t target_queue_index, const char* name)
 {
 	VkCommandPoolCreateInfo vkCommandPoolCreateInfo{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
 	vkCommandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-	vkCommandPoolCreateInfo.queueFamilyIndex = renderer_context->graphics_family_index;
+	vkCommandPoolCreateInfo.queueFamilyIndex = target_queue_index;
 
 	VkCommandPool out = VK_NULL_HANDLE;
 	ACP_VK_CHECK(vkCreateCommandPool(renderer_context->logical_device, &vkCommandPoolCreateInfo, renderer_context->host_allocator, &out), renderer_context);
