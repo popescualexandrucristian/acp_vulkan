@@ -266,7 +266,10 @@ typedef struct dds_file_data {
 
 VkFormat get_vulkan_format(DXGI_FORMAT format, const bool alphaFlag) {
     switch (format) {
-
+    case DXGI_FORMAT::DXGI_FORMAT_BC6H_SF16:
+        return VK_FORMAT_BC6H_SFLOAT_BLOCK;
+    case DXGI_FORMAT::DXGI_FORMAT_BC6H_UF16:
+        return VK_FORMAT_BC6H_UFLOAT_BLOCK;
     case DXGI_FORMAT::DXGI_FORMAT_BC1_UNORM:
     {
         if (alphaFlag)
@@ -835,6 +838,7 @@ dds_file dds_load(unsigned char* data, size_t data_size, bool will_own_data, VkA
         if (data_size - used_data_size < sizeof(DDS_HEADER_DXT10))
             return {};
 
+        file.ddsHeaderDx10 = &dds10_header;
         memcpy(file.ddsHeaderDx10, data, sizeof(DDS_HEADER_DXT10));
         data += sizeof(DDS_HEADER_DXT10);
         used_data_size += sizeof(DDS_HEADER_DXT10);
