@@ -973,7 +973,7 @@ void get_surface_info
     }
 }
 
-
+//todo(alex) : Error handeling !
 acp_vulkan::dds_data acp_vulkan::dds_data_from_memory(void* data, size_t data_size, bool will_own_data, VkAllocationCallbacks* host_allocator)
 {
     dds_file dds_file = dds_load(reinterpret_cast<unsigned char*>(data), data_size, will_own_data, host_allocator);

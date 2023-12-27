@@ -654,7 +654,7 @@ static std::vector<acp_vulkan::program::layout> createDescriptorLayoutsAssumeSha
                     new_binding.binding = binding.binding;
                     new_binding.descriptorType = binding.resource_type;
                     new_binding.stageFlags = shader->type;
-                    new_binding.descriptorCount = 1;// todo(alex) : Parse this in the shader.
+                    new_binding.descriptorCount = 1;//todo(alex) : Parse this in the shader.
                     bindings.emplace_back(std::move(new_binding));
                     currentBinding = &bindings[bindings.size() - 1];
                 }
@@ -717,7 +717,7 @@ static std::vector<acp_vulkan::program::layout> createDescriptorLayoutsNoSharedS
                     new_binding.binding = binding.binding;
                     new_binding.descriptorType = binding.resource_type;
                     new_binding.stageFlags = shader->type;
-                    new_binding.descriptorCount = 1;// todo(alex) : Parse this in the shader.
+                    new_binding.descriptorCount = 1;//todo(alex) : Parse this in the shader.
                     bindings.emplace_back(std::move(new_binding));
                 }
             }
@@ -866,7 +866,7 @@ acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, 
                 {
                     for (uint32_t ii = 0; ii < vertex_input_attribute.locations.size(); ++ii)
                     {
-                        //todo(alex): Check that the user provided locations are valid.
+                        //todo(alex) : Check that the user provided locations are valid.
                         if (shader_usage_attribute.location == vertex_input_attribute.locations[ii])
                         {
                             VkVertexInputAttributeDescription attribute_description{};
@@ -964,7 +964,7 @@ acp_vulkan::program* acp_vulkan::graphics_program_init(VkDevice logical_device, 
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_create_info{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
     input_assembly_create_info.primitiveRestartEnable = false;
-    //todo(alex): Add an option to support other primitive topology types.
+    //todo(alex) : Add an option to support other primitive topology types.
     input_assembly_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     create_info.pInputAssemblyState = &input_assembly_create_info;
 
