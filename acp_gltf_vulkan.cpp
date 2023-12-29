@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdio.h>
 #include <map>
 
 #define MAX_TOKENS_PER_ENTITY (1024 * 1024)
@@ -131,7 +132,26 @@
 	X(alphaMode) \
 	X(doubleSided) \
 	X(skin) \
-	X(matrix)
+	X(matrix) \
+	X(samplers) \
+	X(magFilter) \
+	X(minFilter) \
+	X(wrapS) \
+	X(wrapT) \
+	X(skins) \
+	X(joints) \
+	X(inverseBindMatrices) \
+	X(skeleton) \
+	X(cameras) \
+	X(xmag) \
+	X(ymag) \
+	X(zfar) \
+	X(znear) \
+	X(aspectRatio) \
+	X(yfov) \
+	X(perspective) \
+	X(orthographic) \
+	X(animations)
 
 #define TO_ENUM_VALUE1(x, y) x,
 #define TO_ENUM_VALUE2(x) x,
@@ -1557,8 +1577,243 @@ static std::pair<std::vector<acp_vulkan::gltf_data::scene>, return_value> parse_
 	return { std::move(out), return_value::true_value };
 }
 
-acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t data_size)
+
+static std::pair<acp_vulkan::gltf_data::sampler, return_value> parse_sampler(tokenizer_state* state)
 {
+	struct pars_sampler
+	{
+		uint32_t magFilter{ UINT32_MAX };
+		uint32_t minFilter{ UINT32_MAX };
+		uint32_t wrapS{ 10497 };
+		uint32_t wrapT{ 10497 };
+		acp_vulkan::gltf_data::string_view name;
+	};
+
+	pars_sampler out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::magFilter, &out.magFilter);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::minFilter, &out.minFilter);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::wrapS, &out.wrapS);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::wrapT, &out.wrapT);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	acp_vulkan::gltf_data::sampler final_out{
+		.mag_filter = acp_vulkan::gltf_data::sampler::filter_type(out.magFilter),
+		.min_filter = acp_vulkan::gltf_data::sampler::filter_type(out.minFilter),
+		.wrap_s = acp_vulkan::gltf_data::sampler::wrap_type(out.wrapS),
+		.wrap_t = acp_vulkan::gltf_data::sampler::wrap_type(out.wrapT),
+		.name = out.name
+	};
+
+	return { std::move(final_out), return_value::true_value };
+}
+
+static std::pair<std::vector<acp_vulkan::gltf_data::sampler>, return_value> parse_samplers(tokenizer_state* state)
+{
+	std::vector<acp_vulkan::gltf_data::sampler> out{};
+
+	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
+
+	ELEMENT_START
+		GLTF_ELEMENT(parse_sampler);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+	ELEMENT_END
+
+	EXPECT_AND_DESCARD(token_types::closed_bracket);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::skin, return_value> parse_skin(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::skin out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::inverseBindMatrices, &out.inverse_bind_matrices);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::skeleton, &out.skeleton);
+		TRY_READ_INT_ARRAY_OR_REPORT_ERROR(token_types::joints, out.joints, SIZE_MAX);
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	if (out.inverse_bind_matrices != UINT32_MAX)
+		out.has_inverse_bind_matrices = true;
+
+	if (out.skeleton != UINT32_MAX)
+		out.has_skeleton = true;
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<std::vector<acp_vulkan::gltf_data::skin>, return_value> parse_skins(tokenizer_state* state)
+{
+	std::vector<acp_vulkan::gltf_data::skin> out{};
+
+	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
+
+	ELEMENT_START
+		GLTF_ELEMENT(parse_skin);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+	ELEMENT_END
+
+	EXPECT_AND_DESCARD(token_types::closed_bracket);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::camera::orthographic_properties_type, return_value> parse_camera_orthographic(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::camera::orthographic_properties_type out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::xmag, &out.x_mag);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::ymag, &out.y_mag);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::zfar, &out.z_far);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::znear, &out.z_near);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::camera::perspective_properties_type, return_value> parse_camera_perspective(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::camera::perspective_properties_type out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::aspectRatio, &out.aspect_ratio);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::yfov, &out.y_fov);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::zfar, &out.z_far);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::znear, &out.z_near);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::camera, return_value> parse_camera(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::camera out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	bool has_perspective_data = false;
+	bool has_orthographic_data = false;
+	acp_vulkan::gltf_data::string_view type_as_string;
+	ELEMENT_START
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
+		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::perspective, &out.perspective, parse_camera_perspective, &has_perspective_data);
+		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::orthographic, &out.orthographic, parse_camera_orthographic, &has_orthographic_data);
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::type, &type_as_string);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	size_t perspective_len = strlen(token_as_strings[size_t(token_types::perspective)]);
+	if ((perspective_len == type_as_string.data_length) && (strncmp(token_as_strings[size_t(token_types::perspective)], type_as_string.data, perspective_len) == 0))
+	{
+		out.type = acp_vulkan::gltf_data::camera::camera_type::perspective;
+		if (has_orthographic_data)
+			return { {}, return_value::false_value };
+	}
+	else
+	{
+		size_t orthographic_len = strlen(token_as_strings[size_t(token_types::orthographic)]);
+		if ((orthographic_len == type_as_string.data_length) && (strncmp(token_as_strings[size_t(token_types::orthographic)], type_as_string.data, orthographic_len) == 0))
+		{
+			out.type = acp_vulkan::gltf_data::camera::camera_type::orthographic;
+			if (has_perspective_data)
+				return { {}, return_value::false_value };
+		}
+	}
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<std::vector<acp_vulkan::gltf_data::camera>, return_value> parse_cameras(tokenizer_state* state)
+{
+	std::vector<acp_vulkan::gltf_data::camera> out{};
+
+	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
+
+	ELEMENT_START
+		GLTF_ELEMENT(parse_camera);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+	ELEMENT_END
+
+	EXPECT_AND_DESCARD(token_types::closed_bracket);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::animation, return_value> parse_animation(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::animation out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+		//todo(alex) : Add all the animation fields !!
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<std::vector<acp_vulkan::gltf_data::animation>, return_value> parse_animations(tokenizer_state* state)
+{
+	std::vector<acp_vulkan::gltf_data::animation> out{};
+
+	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
+
+	ELEMENT_START
+		GLTF_ELEMENT(parse_animation);
+	BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+	ELEMENT_END
+
+		EXPECT_AND_DESCARD(token_types::closed_bracket);
+
+	return { std::move(out), return_value::true_value };
+}
+
+acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t data_size, bool will_own_data, VkAllocationCallbacks* host_allocator)
+{
+	char* data_copy = nullptr;
+	(void)host_allocator;
+	//todo(alex) : Make sure everything is using the host allocator including the vecors from the gltf_data.
+	if (will_own_data)
+	{
+		data_copy = host_allocator ?
+			reinterpret_cast<char*>(host_allocator->pfnAllocation(host_allocator->pUserData, data_size, 1, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT))
+			: new char[data_size];
+
+		memcpy(data_copy, data, data_size);
+		data = data_copy;
+	}
+
 	acp_vulkan::gltf_data out{};
 
 	tokenizer_state state{
@@ -1594,6 +1849,10 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 			GLTF_SECTION(token_types::materials, parse_materials, materials);
 			GLTF_SECTION(token_types::nodes, parse_nodes, nodes);
 			GLTF_SECTION(token_types::scenes, parse_scenes, scenes);
+			GLTF_SECTION(token_types::samplers, parse_samplers, samplers);
+			GLTF_SECTION(token_types::skins, parse_skins, skins);
+			GLTF_SECTION(token_types::cameras, parse_cameras, cameras);
+			GLTF_SECTION(token_types::animations, parse_animations, animations);
 			case token_types::scene:
 			{
 				if (expect_ordered_and_discard_tokens(&state, { token_types::colon }) == return_value::error_value)
@@ -1609,9 +1868,6 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 			}
 			default:
 				skip_object_and_arries_if_found(&state);
-
-			//todo(alex) : Parse other kinds of nodes !
-			//left : animations,skins,samplers,cameras,lights,audioEmitters,audioSources
 		}
 
 		if (t.type == token_types::eof)
@@ -1627,5 +1883,64 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 		}
 	}
 
+	if (will_own_data)
+		out.gltf_data = data_copy;
+
 	return out;
+}
+
+acp_vulkan::gltf_data acp_vulkan::gltf_data_from_file(const char* path, VkAllocationCallbacks* host_allocator)
+{
+	FILE* gltf_bytes = fopen(path, "rb");
+	if (!gltf_bytes)
+		return {};
+
+	fseek(gltf_bytes, 0, SEEK_END);
+	long gltf_size = ftell(gltf_bytes);
+	fseek(gltf_bytes, 0, SEEK_SET);
+
+	char* gltf_data = host_allocator ?
+		reinterpret_cast<char*>(host_allocator->pfnAllocation(host_allocator->pUserData, gltf_size, 1, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT))
+		: new char[gltf_size];
+
+	if (!gltf_data)
+	{
+		fclose(gltf_bytes);
+		return {.gltf_state = acp_vulkan::gltf_data::gltf_state_type::unable_to_read_file, .parsing_error_location = 0 };
+	}
+
+	size_t bytes_to_read = gltf_size;
+	size_t offset = 0;
+	while (size_t bytes_read = fread(gltf_data + offset, 1, bytes_to_read, gltf_bytes))
+	{
+		offset += bytes_read;
+		bytes_to_read -= bytes_read;
+	}
+
+	fclose(gltf_bytes);
+
+	if (gltf_size < offset)
+	{
+		if (host_allocator)
+			host_allocator->pfnFree(host_allocator->pUserData, gltf_data);
+		else
+			delete[] gltf_data;
+
+		return {};
+	}
+
+	//todo(alex) : Make sure everything is using the host allocator including the vecors from the gltf_data.
+	acp_vulkan::gltf_data out = acp_vulkan::gltf_data_from_memory(gltf_data, gltf_size, false, host_allocator);
+	out.gltf_data = gltf_data;
+	return out;
+}
+
+void acp_vulkan::gltf_data_free(gltf_data* gltf_data, VkAllocationCallbacks* host_allocator)
+{
+	//todo(alex) : Once a host allocator is used make sure everything is freed using it including the vecors from the gltf_data.
+	if (gltf_data->gltf_data)
+		if (host_allocator)
+			host_allocator->pfnFree(host_allocator->pUserData, gltf_data->gltf_data);
+		else
+			delete[] gltf_data->gltf_data;
 }

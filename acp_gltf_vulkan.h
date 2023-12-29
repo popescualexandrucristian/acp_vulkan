@@ -11,7 +11,8 @@ namespace acp_vulkan
 		{
 			valid,
 			parsing_error,
-			missing_asset_section
+			missing_asset_section,
+			unable_to_read_file
 		} gltf_state;
 		size_t parsing_error_location;
 
@@ -252,8 +253,84 @@ namespace acp_vulkan
 		uint32_t default_scene{ UINT32_MAX };
 		bool has_defautl_scene{ false };
 
-		void* gltf_data;
+		struct sampler
+		{
+			enum class filter_type
+			{
+				NONE = 0,
+				NEAREST = 9728,
+				LINEAR = 9729,
+				NEAREST_MIPMAP_NEAREST = 9984,
+				LINEAR_MIPMAP_NEAREST = 9985,
+				NEAREST_MIPMAP_LINEAR = 9986,
+				LINEAR_MIPMAP_LINEAR = 9987
+			};
+			enum class wrap_type
+			{
+				REPEAT = 10497,
+				CLAMP_TO_EDGE = 33071,
+				MIRRORED_REPEAT = 33648,
+			};
+			filter_type mag_filter{ filter_type::NONE };
+			filter_type min_filter{ filter_type::NONE };
+			wrap_type wrap_s{ wrap_type::REPEAT };
+			wrap_type wrap_t{ wrap_type::REPEAT };
+			string_view name;
+		};
+		std::vector<sampler> samplers;
+
+		struct skin
+		{
+			bool has_inverse_bind_matrices{ false };
+			uint32_t inverse_bind_matrices{ UINT32_MAX };
+			bool has_skeleton{ false };
+			uint32_t skeleton{ UINT32_MAX };
+			std::vector<uint32_t> joints;
+			string_view name;
+		};
+		std::vector<skin> skins;
+
+		struct camera
+		{
+			enum class camera_type
+			{
+				perspective,
+				orthographic
+			};
+			camera_type type;
+
+
+			struct orthographic_properties_type
+			{
+				float x_mag;
+				float y_mag;
+				float z_far;
+				float z_near;
+			};
+			orthographic_properties_type orthographic;
+			struct perspective_properties_type
+			{
+				float aspect_ratio;
+				float y_fov;
+				float z_far;
+				float z_near;
+			};
+			perspective_properties_type perspective;
+			string_view name;
+		};
+		std::vector<camera> cameras;
+
+		struct animation
+		{
+			//todo(alex) : Add all the animation fields !!
+			string_view name;
+		};
+		std::vector<animation> animations;
+
+		char* gltf_data;
 	};
 
-	gltf_data gltf_data_from_memory(const char* data, size_t data_size);
+	gltf_data gltf_data_from_memory(const char* data, size_t data_size, bool will_own_data, VkAllocationCallbacks* host_allocator);
+	gltf_data gltf_data_from_file(const char* path, VkAllocationCallbacks* host_allocator);
+	void gltf_data_free(gltf_data* gltf_data, VkAllocationCallbacks* host_allocator);
 };
