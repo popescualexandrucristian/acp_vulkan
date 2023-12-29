@@ -244,6 +244,14 @@ namespace acp_vulkan
 		};
 		std::vector<node> nodes;
 
+		struct scene {
+			std::vector<uint32_t> nodes;
+			string_view name;
+		};
+		std::vector<scene> scenes;
+		uint32_t default_scene{ UINT32_MAX };
+		bool has_defautl_scene{ false };
+
 		void* gltf_data;
 	};
 
