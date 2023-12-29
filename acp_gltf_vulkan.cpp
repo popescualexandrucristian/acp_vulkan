@@ -18,6 +18,12 @@
 	X(true_value, true) \
 	X(false_value, false)
 
+#define TOKENS_FOR_ALPHA_MODES(X) \
+	X(OPAQUE) \
+	X(MASK) \
+	X(alphaCutoff) \
+	X(BLEND)
+
 #define TOKENS_FOR_ATTRIBUES(X) \
 	X(TEXCOORD_0)\
 	X(TEXCOORD_1)\
@@ -112,7 +118,20 @@
 	X(values) \
 	X(sampler) \
 	X(mode) \
-	X(targets)
+	X(targets) \
+	X(texCoord) \
+	X(baseColorFactor) \
+	X(metallicFactor) \
+	X(roughnessFactor) \
+	X(metallicRoughnessTexture) \
+	X(strength) \
+	X(occlusionTexture) \
+	X(emissiveTexture) \
+	X(emissiveFactor) \
+	X(alphaMode) \
+	X(doubleSided) \
+	X(skin) \
+	X(matrix)
 
 #define TO_ENUM_VALUE1(x, y) x,
 #define TO_ENUM_VALUE2(x) x,
@@ -120,6 +139,7 @@ enum class token_types : uint32_t {
 	TOKENS_WITH_DIFFERENT_REPRESENATATION(TO_ENUM_VALUE1)
 	TOKENS(TO_ENUM_VALUE2)
 	TOKENS_FOR_ATTRIBUES(TO_ENUM_VALUE2)
+	TOKENS_FOR_ALPHA_MODES(TO_ENUM_VALUE2)
 	comma,
 	TOKENS_COUNT,
 	is_float,
@@ -136,6 +156,7 @@ static const char* token_as_strings[] = {
 	TOKENS_WITH_DIFFERENT_REPRESENATATION(TO_STRING_VALUE1)
 	TOKENS(TO_STRING_VALUE2)
 	TOKENS_FOR_ATTRIBUES(TO_STRING_VALUE2)
+	TOKENS_FOR_ALPHA_MODES(TO_STRING_VALUE2)
 	","
 };
 #undef TO_STRING_VALUE1
@@ -147,6 +168,7 @@ static const bool is_string_like[] = {
 	TOKENS_WITH_DIFFERENT_REPRESENATATION(TO_STRING_VALUE1)
 	TOKENS(TO_STRING_VALUE2)
 	TOKENS_FOR_ATTRIBUES(TO_STRING_VALUE2)
+	TOKENS_FOR_ALPHA_MODES(TO_STRING_VALUE2)
 	false,//comma
 	false, //TOKENS_COUNT,
 	false, //is_float,
@@ -163,6 +185,15 @@ static const std::map<token_types, acp_vulkan::gltf_data::attribute> tokens_to_a
 	TOKENS_FOR_ATTRIBUES(TOKEN_TO_ATTRIBUTE_DECLARATION)
 };
 #undef TOKEN_TO_ATTRIBUTE_DECLARATION
+
+static const std::map<token_types, acp_vulkan::gltf_data::material::alpha_mode_type> tokens_to_alpha_mode
+{
+	{token_types::OPAQUE, acp_vulkan::gltf_data::material::alpha_mode_type::OPAQUE},
+	{token_types::MASK, acp_vulkan::gltf_data::material::alpha_mode_type::MASK},
+	{token_types::alphaCutoff, acp_vulkan::gltf_data::material::alpha_mode_type::ALPHA_CUTOFF},
+	{token_types::BLEND, acp_vulkan::gltf_data::material::alpha_mode_type::BLEND}
+};
+#undef TOKEN_TO_ALPHA_MODE_DECLARATION
 
 struct token {
 	token_types type;
@@ -1102,7 +1133,7 @@ static std::pair<std::vector<std::pair<acp_vulkan::gltf_data::attribute, uint32_
 }
 
 template<typename T>
-return_value try_read_attributes_property_to(tokenizer_state* state, token_types type, T& target)
+static return_value try_read_attributes_property_to(tokenizer_state* state, token_types type, T& target)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -1129,7 +1160,7 @@ return_value try_read_attributes_property_to(tokenizer_state* state, token_types
 			continue;																								\
 	}
 
-std::pair<acp_vulkan::gltf_data::mesh::primitive_type::target, return_value> parse_mesh_primitive_targets(tokenizer_state* state)
+static std::pair<acp_vulkan::gltf_data::mesh::primitive_type::target, return_value> parse_mesh_primitive_targets(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::mesh::primitive_type::target out{};
 
@@ -1145,7 +1176,7 @@ std::pair<acp_vulkan::gltf_data::mesh::primitive_type::target, return_value> par
 	return { std::move(out), return_value::true_value };
 }
 
-std::pair<acp_vulkan::gltf_data::mesh::primitive_type, return_value> parse_mesh_primitive(tokenizer_state* state)
+static std::pair<acp_vulkan::gltf_data::mesh::primitive_type, return_value> parse_mesh_primitive(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::mesh::primitive_type out{};
 
@@ -1165,7 +1196,7 @@ std::pair<acp_vulkan::gltf_data::mesh::primitive_type, return_value> parse_mesh_
 	return { std::move(out), return_value::true_value };
 }
 
-std::pair<acp_vulkan::gltf_data::mesh, return_value> parse_mesh(tokenizer_state* state)
+static std::pair<acp_vulkan::gltf_data::mesh, return_value> parse_mesh(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::mesh out{};
 
@@ -1183,7 +1214,7 @@ std::pair<acp_vulkan::gltf_data::mesh, return_value> parse_mesh(tokenizer_state*
 	return { std::move(out), return_value::true_value };
 }
 
-std::pair<std::vector<acp_vulkan::gltf_data::mesh>, return_value> parse_meshes(tokenizer_state* state)
+static std::pair<std::vector<acp_vulkan::gltf_data::mesh>, return_value> parse_meshes(tokenizer_state* state)
 {
 	std::vector<acp_vulkan::gltf_data::mesh> out{};
 
@@ -1198,6 +1229,215 @@ std::pair<std::vector<acp_vulkan::gltf_data::mesh>, return_value> parse_meshes(t
 
 	return { std::move(out), return_value::true_value };
 }
+
+static std::pair<acp_vulkan::gltf_data::material::texture_info, return_value> parse_material_texture_info(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::material::texture_info out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::index, &out.index);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::texCoord, &out.tex_coord);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::material::normal_texture_info, return_value> parse_material_normal_texture_info(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::material::normal_texture_info out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::index, &out.index);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::texCoord, &out.tex_coord);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::scale, &out.scale);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::material::occlusion_texture_info, return_value> parse_material_occlusion_texture_info(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::material::occlusion_texture_info out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::index, &out.index);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::texCoord, &out.tex_coord);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::strength, &out.strength);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+		DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::material::pbr_metallic_roughness_type, return_value> parse_material_pbr_metallic_roughness(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::material::pbr_metallic_roughness_type out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::baseColorFactor, out.base_color_factor, 4);
+		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::baseColorTexture, &out.base_color_texture, parse_material_texture_info, &out.has_base_color_texture);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::metallicFactor, &out.metallic_factor);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::roughnessFactor, &out.roughness_factor);
+		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::metallicRoughnessTexture, &out.metallic_roughness_texture, parse_material_texture_info, &out.has_metallic_roughness_texture);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+template<typename T>
+static return_value try_read_alpha_mode_property_to(tokenizer_state* state, token_types type, T* target)
+{
+	peeked_token t = peek_token(state);
+	if (t.token.type == type)
+	{
+		next_token(state);
+		if (expect(next_token(state), token_types::colon) == return_value::error_value)
+			return return_value::error_value;
+		token value = next_token(state);
+		if (auto iter = tokens_to_alpha_mode.find(value.type); iter != tokens_to_alpha_mode.end())
+		{
+			*target = T(iter->second);
+			return return_value::true_value;
+		}
+
+		return return_value::error_value;
+	}
+	return return_value::false_value;
+}
+
+#define TRY_READ_ALPHA_MODE_VALUE_OR_REPORT_ERROR(TOKEN, TARGET)											\
+	{																										\
+		return_value r = try_read_alpha_mode_property_to(state, TOKEN, TARGET);								\
+		if (r == return_value::error_value)																	\
+			return { {}, return_value::error_value };														\
+		else if (r == return_value::true_value)																\
+			continue;																						\
+	}
+
+static std::pair<acp_vulkan::gltf_data::material, return_value> parse_material(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::material out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::pbrMetallicRoughness, &out.pbr_metallic_roughness, parse_material_pbr_metallic_roughness, &out.has_pbr_metallic_roughness);
+		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::normalTexture, &out.normal_texture, parse_material_normal_texture_info, &out.has_normal_texture);
+		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::occlusionTexture, &out.occlusion_texture, parse_material_occlusion_texture_info, &out.has_occlusion_texture);
+		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::emissiveTexture, &out.emissive_texture, parse_material_texture_info, &out.has_emissive_texture);
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::emissiveFactor, out.emissive_factor, 3);
+		TRY_READ_ALPHA_MODE_VALUE_OR_REPORT_ERROR(token_types::alphaMode, &out.alpha_mode);
+		TRY_READ_FLOAT_VALUE_OR_REPORT_ERROR(token_types::alphaCutoff, &out.alpha_cutoff);
+		TRY_READ_BOOL_VALUE_OR_REPORT_ERROR(token_types::doubleSided, &out.double_sided);
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<std::vector<acp_vulkan::gltf_data::material>, return_value> parse_materials(tokenizer_state* state)
+{
+	std::vector<acp_vulkan::gltf_data::material> out{};
+
+	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
+
+	ELEMENT_START
+		GLTF_ELEMENT(parse_material);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+	ELEMENT_END
+
+	EXPECT_AND_DESCARD(token_types::closed_bracket);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::node, return_value> parse_node(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::node out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::skin, &out.skin);
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::matrix, out.matrix, 16);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::mesh, &out.mesh);
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::rotation, out.rotation, 4);
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::scale, out.scale, 3);
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::translation, out.translation, 3);
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::weights, out.weights, SIZE_MAX);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	if (out.camera != UINT32_MAX)
+		out.has_camera = true;
+
+	if (out.mesh != UINT32_MAX)
+		out.has_mesh = true;
+
+	if (out.skin != UINT32_MAX)
+		out.has_skin = true;
+
+	float default_matrix[16]{ 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f , 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+	if (memcmp(out.matrix, default_matrix, sizeof(float) * 16) != 0)
+		out.has_matrix = true;
+
+	float default_rotation[4]{ 0.0f, 0.0f, 0.0f, 1.0f };
+	if (memcmp(out.rotation, default_rotation, sizeof(float) * 4) != 0)
+		out.has_rotation = true;
+
+	float default_scale[3]{ 1.0f, 1.0f, 1.0f };
+	if (memcmp(out.scale, default_scale, sizeof(float) * 3) != 0)
+		out.has_scale = true;
+
+	float default_translation[3]{ 0.0f, 0.0f, 0.0f };
+	if (memcmp(out.translation, default_translation, sizeof(float) * 3) != 0)
+		out.has_translation = true;
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<std::vector<acp_vulkan::gltf_data::node>, return_value> parse_nodes(tokenizer_state* state)
+{
+	std::vector<acp_vulkan::gltf_data::node> out{};
+
+	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
+
+	ELEMENT_START
+		GLTF_ELEMENT(parse_node);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+	ELEMENT_END
+
+	EXPECT_AND_DESCARD(token_types::closed_bracket);
+
+	return { std::move(out), return_value::true_value };
+}
+
+
 
 acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t data_size)
 {
@@ -1233,6 +1473,10 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 			GLTF_SECTION(token_types::accessors, parse_accesors, accesors);
 			GLTF_SECTION(token_types::textures, parse_textures, textures);
 			GLTF_SECTION(token_types::meshes, parse_meshes, meshes);
+			GLTF_SECTION(token_types::materials, parse_materials, materials);
+			GLTF_SECTION(token_types::nodes, parse_nodes, nodes);
+			default:
+				skip_object_and_arries_if_found(&state);
 
 			//todo(alex) : Parse other kinds of nodes !
 		}

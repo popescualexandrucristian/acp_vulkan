@@ -170,6 +170,80 @@ namespace acp_vulkan
 		};
 		std::vector<mesh> meshes;
 
+		struct material
+		{
+			struct texture_info
+			{
+				uint32_t index;
+				uint32_t tex_coord{ 0 };
+			};
+			struct pbr_metallic_roughness_type
+			{
+				float base_color_factor[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
+				bool has_base_color_texture{ false };
+				texture_info base_color_texture;
+				float metallic_factor{ 1.0f };
+				float roughness_factor{ 1.0f };
+				bool has_metallic_roughness_texture{ false };
+				texture_info metallic_roughness_texture;
+			};
+			bool has_pbr_metallic_roughness{ false };
+			pbr_metallic_roughness_type pbr_metallic_roughness;
+			struct normal_texture_info
+			{
+				uint32_t index;
+				uint32_t tex_coord{ 0 };
+				float scale{ 1.0f };
+			};
+			bool has_normal_texture{ false };
+			normal_texture_info normal_texture;
+			struct occlusion_texture_info
+			{
+				uint32_t index;
+				uint32_t tex_coord{ 0 };
+				float strength{ 1.0f };
+			};
+			bool has_occlusion_texture{ false };
+			occlusion_texture_info occlusion_texture;
+			bool has_emissive_texture{ false };
+			texture_info emissive_texture;
+			float emissive_factor[3] = { 0.0f, 0.0f, 0.0f };
+			enum class alpha_mode_type
+			{
+				OPAQUE,
+				MASK,
+				ALPHA_CUTOFF,
+				BLEND
+			};
+			alpha_mode_type alpha_mode{ alpha_mode_type::OPAQUE };
+			float alpha_cutoff{ 0.5f };
+			bool double_sided{ false };
+			string_view name;
+		};
+		std::vector<material> materials;
+
+		struct node
+		{
+			bool has_camera{ false };
+			uint32_t camera{ UINT32_MAX };
+			std::vector<uint32_t> children;
+			bool has_skin{ false };
+			uint32_t skin{ UINT32_MAX };
+			bool has_mesh{ false };
+			uint32_t mesh{ UINT32_MAX };
+			bool has_matrix{ false };
+			float matrix[16]{ 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f , 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+			bool has_rotation{ false };
+			float rotation[4]{ 0.0f, 0.0f, 0.0f, 1.0f };
+			bool has_scale{ false };
+			float scale[3]{ 1.0f, 1.0f, 1.0f };
+			bool has_translation{ false };
+			float translation[3]{ 0.0f, 0.0f, 0.0f };
+			std::vector<float> weights;
+			string_view name;
+		};
+		std::vector<node> nodes;
+
 		void* gltf_data;
 	};
 
