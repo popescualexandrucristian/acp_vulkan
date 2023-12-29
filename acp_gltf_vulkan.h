@@ -322,7 +322,34 @@ namespace acp_vulkan
 
 		struct animation
 		{
-			//todo(alex) : Add all the animation fields !!
+			struct channel
+			{
+				uint32_t sampler;
+				struct target_type {
+					uint32_t node;
+					enum class path_type {
+						translation,
+						rotation,
+						scale,
+						weights
+					};
+					path_type path;
+				};
+				target_type target;
+			};
+			std::vector<channel> channels;
+			struct sampler {
+				uint32_t input;
+				enum class interpolation_type
+				{
+					LINEAR,
+					STEP,
+					CUBICSPLINE
+				};
+				interpolation_type interpolation{ interpolation_type::LINEAR };
+				uint32_t output;
+			};
+			std::vector<sampler> samplers;
 			string_view name;
 		};
 		std::vector<animation> animations;
@@ -330,6 +357,9 @@ namespace acp_vulkan
 		char* gltf_data;
 	};
 
+	//todo(alex) : Move away from vector so we can use the host_allocator for everything !
+	//todo(alex) : Parse the binary version !
+	//todo(alex) : Translate buffers and images saved in the uri, maybe add an option ?
 	gltf_data gltf_data_from_memory(const char* data, size_t data_size, bool will_own_data, VkAllocationCallbacks* host_allocator);
 	gltf_data gltf_data_from_file(const char* path, VkAllocationCallbacks* host_allocator);
 	void gltf_data_free(gltf_data* gltf_data, VkAllocationCallbacks* host_allocator);

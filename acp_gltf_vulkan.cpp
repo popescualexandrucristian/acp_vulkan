@@ -151,7 +151,14 @@
 	X(yfov) \
 	X(perspective) \
 	X(orthographic) \
-	X(animations)
+	X(animations) \
+	X(channels) \
+	X(target) \
+	X(node) \
+	X(path) \
+	X(input) \
+	X(output) \
+	X(interpolation)
 
 #define TO_ENUM_VALUE1(x, y) x,
 #define TO_ENUM_VALUE2(x) x,
@@ -263,7 +270,7 @@ static peeked_token peek_token(tokenizer_state* state)
 		for (uint32_t ii = 0; ii < uint32_t(token_types::TOKENS_COUNT); ++ii)
 		{
 			size_t token_length = strlen(token_as_strings[size_t(ii)]);
-			if ((state->next_char + token_length) < state->data_size)
+			if ((state->next_char + token_length) <= state->data_size)
 			{
 				if (strncmp(state->data + state->next_char, token_as_strings[size_t(ii)], token_length) == 0)
 				{
@@ -418,11 +425,18 @@ static return_value try_read_real_property_to(tokenizer_state* state, token_type
 		if (expect(next_token(state), token_types::colon) == return_value::error_value)
 			return return_value::error_value;
 		token value = next_token(state);
-		if (value.type != token_types::is_float)
-			return return_value::error_value;
+		if (value.type == token_types::is_float)
+		{
+			*target = T(value.value.as_real);
+			return return_value::true_value;
+		} 
+		else if (value.type == token_types::is_int)
+		{
+			*target = T(value.value.as_int);
+			return return_value::true_value;
+		}
 
-		*target = T(value.value.as_real);
-		return return_value::true_value;
+		return return_value::error_value;
 	}
 	return return_value::false_value;
 }
@@ -464,11 +478,14 @@ static return_value try_read_int_property_to(tokenizer_state* state, token_types
 		if (expect(next_token(state), token_types::colon) == return_value::error_value)
 			return return_value::error_value;
 		token value = next_token(state);
-		if (value.type != token_types::is_int)
-			return return_value::error_value;
+		if (value.type == token_types::is_int)
+		{
+			*target = T(value.value.as_int);
+			return return_value::true_value;
+		}
 
-		*target = T(value.value.as_int);
-		return return_value::true_value;
+		return return_value::error_value;
+
 	}
 	return return_value::false_value;
 }
@@ -820,6 +837,11 @@ static std::pair<std::vector<float>, return_value> parse_float_array(tokenizer_s
 			out.push_back(float(t.token.value.as_real));
 			next_token(state);
 		}
+		else if (t.token.type == token_types::is_int)
+		{
+			out.push_back(float(t.token.value.as_int));
+			next_token(state);
+		}
 		DESCARD_IF_EXCPECTED(token_types::comma);
 		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
 	ELEMENT_END
@@ -905,6 +927,7 @@ static std::pair<std::vector<uint32_t>, return_value> parse_int_array(tokenizer_
 		out.push_back(uint32_t(t.token.value.as_int));
 		next_token(state);
 	}
+
 	DESCARD_IF_EXCPECTED(token_types::comma);
 	BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
 	ELEMENT_END
@@ -1138,8 +1161,8 @@ static std::pair<acp_vulkan::gltf_data::accesor, return_value> parse_accesor(tok
 		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::count, &out.count);
 		TRY_READ_STRING_OR_REPORT_ERROR(token_types::type, &out.type);
 		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
-		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::min, static_cast<float*>(out.min), sizeof(out.min) / sizeof(out.min[0]));
-		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::max, static_cast<float*>(out.max), sizeof(out.max) / sizeof(out.max[0]));
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::min, out.min, sizeof(out.min) / sizeof(out.min[0]));
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::max, out.max, sizeof(out.max) / sizeof(out.max[0]));
 		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::sparse, &out.sparse, parse_sparse_type, &out.is_sparse);
 		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
 	ELEMENT_END
@@ -1766,6 +1789,102 @@ static std::pair<std::vector<acp_vulkan::gltf_data::camera>, return_value> parse
 	return { std::move(out), return_value::true_value };
 }
 
+static std::pair<acp_vulkan::gltf_data::animation::channel::target_type, return_value> parse_animation_channel_target(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::animation::channel::target_type out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	acp_vulkan::gltf_data::string_view target_as_string;
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::node, &out.node);
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::path, &target_as_string);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	if (!target_as_string.data)
+		return { {}, return_value::error_value };
+	
+	const char* path_types_as_strings[] {
+		"translation",
+		"rotation",
+		"scale",
+		"weights"
+	};
+	bool found_path = false;
+	for (size_t ii = 0; ii < 4; ++ii)
+	{
+		if (strncmp(target_as_string.data, path_types_as_strings[ii], strlen(path_types_as_strings[ii])) == 0)
+		{
+			out.path = acp_vulkan::gltf_data::animation::channel::target_type::path_type(ii);
+			found_path = true;
+			break;
+		}
+	}
+
+	if(!found_path)
+		return { {}, return_value::error_value };
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::animation::channel, return_value> parse_animation_channel(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::animation::channel out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::sampler, &out.sampler);
+		TRY_READ_GLTF_SUB_SECTION_OR_REPORT_ERROR(token_types::target, &out.target, parse_animation_channel_target);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::animation::sampler, return_value> parse_animation_sampler(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::animation::sampler out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	acp_vulkan::gltf_data::string_view interpolation_as_string{};
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::input, &out.input);
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::interpolation, &interpolation_as_string);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::output, &out.output);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	if (interpolation_as_string.data)
+	{
+		const char* interpolation_types_as_strings[]{
+			"LINEAR",
+			"STEP",
+			"CUBICSPLINE",
+		};
+		for (size_t ii = 0; ii < 3; ++ii)
+		{
+			if (strncmp(interpolation_as_string.data, interpolation_types_as_strings[ii], strlen(interpolation_types_as_strings[ii])) == 0)
+			{
+				out.interpolation = acp_vulkan::gltf_data::animation::sampler::interpolation_type(ii);
+				break;
+			}
+		}
+	}
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
 static std::pair<acp_vulkan::gltf_data::animation, return_value> parse_animation(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::animation out{};
@@ -1773,9 +1892,10 @@ static std::pair<acp_vulkan::gltf_data::animation, return_value> parse_animation
 	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
 
 	ELEMENT_START
+		TRY_READ_GLTF_SUB_SECTION_ARRAY_OR_REPORT_ERROR(token_types::channels, out.channels, parse_animation_channel);
+		TRY_READ_GLTF_SUB_SECTION_ARRAY_OR_REPORT_ERROR(token_types::samplers, out.samplers, parse_animation_sampler);
 		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
 		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
-		//todo(alex) : Add all the animation fields !!
 	ELEMENT_END
 
 	DESCARD_IF_EXCPECTED(token_types::close_curly);
@@ -1794,7 +1914,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::animation>, return_value> pa
 	BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
 	ELEMENT_END
 
-		EXPECT_AND_DESCARD(token_types::closed_bracket);
+	EXPECT_AND_DESCARD(token_types::closed_bracket);
 
 	return { std::move(out), return_value::true_value };
 }
@@ -1803,7 +1923,6 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 {
 	char* data_copy = nullptr;
 	(void)host_allocator;
-	//todo(alex) : Make sure everything is using the host allocator including the vecors from the gltf_data.
 	if (will_own_data)
 	{
 		data_copy = host_allocator ?
@@ -1929,7 +2048,6 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_file(const char* path, VkAlloca
 		return {};
 	}
 
-	//todo(alex) : Make sure everything is using the host allocator including the vecors from the gltf_data.
 	acp_vulkan::gltf_data out = acp_vulkan::gltf_data_from_memory(gltf_data, gltf_size, false, host_allocator);
 	out.gltf_data = gltf_data;
 	return out;
@@ -1937,7 +2055,6 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_file(const char* path, VkAlloca
 
 void acp_vulkan::gltf_data_free(gltf_data* gltf_data, VkAllocationCallbacks* host_allocator)
 {
-	//todo(alex) : Once a host allocator is used make sure everything is freed using it including the vecors from the gltf_data.
 	if (gltf_data->gltf_data)
 		if (host_allocator)
 			host_allocator->pfnFree(host_allocator->pUserData, gltf_data->gltf_data);
