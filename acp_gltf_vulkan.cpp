@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <map>
 
 #define MAX_TOKENS_PER_ENTITY (1024 * 1024)
 
@@ -15,32 +16,9 @@
 	X(closed_bracket, ])\
 	X(colon, :) \
 	X(true_value, true) \
-	X(false_value, false) \
+	X(false_value, false)
 
-#define TOKENS(X) \
-	X(accessors)\
-	X(bufferView)\
-	X(bufferViews)\
-	X(componentType)\
-	X(count)\
-	X(type)\
-	X(VEC2)\
-	X(VEC3)\
-	X(VEC4)\
-	X(max)\
-	X(min)\
-	X(asset)\
-	X(generator)\
-	X(version)\
-	X(buffer)\
-	X(byteLength)\
-	X(byteOffset)\
-	X(buffers)\
-	X(uri)\
-	X(images)\
-	X(meshes)\
-	X(primitives)\
-	X(attributes)\
+#define TOKENS_FOR_ATTRIBUES(X) \
 	X(TEXCOORD_0)\
 	X(TEXCOORD_1)\
 	X(TEXCOORD_2)\
@@ -83,7 +61,32 @@
 	X(WEIGHTS_6)\
 	X(WEIGHTS_7)\
 	X(WEIGHTS_8)\
-	X(WEIGHTS_9)\
+	X(WEIGHTS_9)
+
+#define TOKENS(X) \
+	X(accessors)\
+	X(bufferView)\
+	X(bufferViews)\
+	X(componentType)\
+	X(count)\
+	X(type)\
+	X(VEC2)\
+	X(VEC3)\
+	X(VEC4)\
+	X(max)\
+	X(min)\
+	X(asset)\
+	X(generator)\
+	X(version)\
+	X(buffer)\
+	X(byteLength)\
+	X(byteOffset)\
+	X(buffers)\
+	X(uri)\
+	X(images)\
+	X(meshes)\
+	X(primitives)\
+	X(attributes)\
 	X(indices)\
 	X(material)\
 	X(name)\
@@ -104,13 +107,19 @@
 	X(source) \
 	X(SCALAR) \
 	X(mimeType) \
-	X(normalized)
+	X(normalized) \
+	X(sparse) \
+	X(values) \
+	X(sampler) \
+	X(mode) \
+	X(targets)
 
 #define TO_ENUM_VALUE1(x, y) x,
 #define TO_ENUM_VALUE2(x) x,
 enum class token_types : uint32_t {
 	TOKENS_WITH_DIFFERENT_REPRESENATATION(TO_ENUM_VALUE1)
 	TOKENS(TO_ENUM_VALUE2)
+	TOKENS_FOR_ATTRIBUES(TO_ENUM_VALUE2)
 	comma,
 	TOKENS_COUNT,
 	is_float,
@@ -126,6 +135,7 @@ enum class token_types : uint32_t {
 static const char* token_as_strings[] = {
 	TOKENS_WITH_DIFFERENT_REPRESENATATION(TO_STRING_VALUE1)
 	TOKENS(TO_STRING_VALUE2)
+	TOKENS_FOR_ATTRIBUES(TO_STRING_VALUE2)
 	","
 };
 #undef TO_STRING_VALUE1
@@ -136,6 +146,7 @@ static const char* token_as_strings[] = {
 static const bool is_string_like[] = {
 	TOKENS_WITH_DIFFERENT_REPRESENATATION(TO_STRING_VALUE1)
 	TOKENS(TO_STRING_VALUE2)
+	TOKENS_FOR_ATTRIBUES(TO_STRING_VALUE2)
 	false,//comma
 	false, //TOKENS_COUNT,
 	false, //is_float,
@@ -145,6 +156,13 @@ static const bool is_string_like[] = {
 };
 #undef TO_STRING_VALUE1
 #undef TO_STRING_VALUE2
+
+#define TOKEN_TO_ATTRIBUTE_DECLARATION(x) {token_types::x, acp_vulkan::gltf_data::attribute::x},
+static const std::map<token_types, acp_vulkan::gltf_data::attribute> tokens_to_attribute
+{
+	TOKENS_FOR_ATTRIBUES(TOKEN_TO_ATTRIBUTE_DECLARATION)
+};
+#undef TOKEN_TO_ATTRIBUTE_DECLARATION
 
 struct token {
 	token_types type;
@@ -321,7 +339,7 @@ static token next_token(tokenizer_state* state)
 	return p.token;
 }
 
-return_value try_read_string_property_in_to(tokenizer_state* state, token_types type, acp_vulkan::gltf_data::string_view* target)
+static return_value try_read_string_property_in_to(tokenizer_state* state, token_types type, acp_vulkan::gltf_data::string_view* target)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -340,7 +358,7 @@ return_value try_read_string_property_in_to(tokenizer_state* state, token_types 
 }
 
 template<typename T>
-return_value try_read_real_property_to(tokenizer_state* state, token_types type, T* target)
+static return_value try_read_real_property_to(tokenizer_state* state, token_types type, T* target)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -359,7 +377,7 @@ return_value try_read_real_property_to(tokenizer_state* state, token_types type,
 }
 
 template<typename T>
-return_value try_read_bool_property_to(tokenizer_state* state, token_types type, T* target)
+static return_value try_read_bool_property_to(tokenizer_state* state, token_types type, T* target)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -386,7 +404,7 @@ return_value try_read_bool_property_to(tokenizer_state* state, token_types type,
 
 
 template<typename T>
-return_value try_read_int_property_to(tokenizer_state* state, token_types type, T* target)
+static return_value try_read_int_property_to(tokenizer_state* state, token_types type, T* target)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -404,7 +422,7 @@ return_value try_read_int_property_to(tokenizer_state* state, token_types type, 
 	return return_value::false_value;
 }
 
-return_value expect_ordered_and_discard_tokens(tokenizer_state* state, std::initializer_list<token_types> expected)
+static return_value expect_ordered_and_discard_tokens(tokenizer_state* state, std::initializer_list<token_types> expected)
 {
 	for (token_types t : expected)
 		if (expect(next_token(state), t) == return_value::error_value)
@@ -413,7 +431,7 @@ return_value expect_ordered_and_discard_tokens(tokenizer_state* state, std::init
 	return return_value::true_value;
 }
 
-return_value discard_next_or_return_if_token(tokenizer_state* state, token_types expected)
+static return_value discard_next_or_return_if_token(tokenizer_state* state, token_types expected)
 {
 	peeked_token p = peek_token(state);
 	if (p.token.type == expected)
@@ -429,7 +447,7 @@ return_value discard_next_or_return_if_token(tokenizer_state* state, token_types
 	return return_value::false_value;
 }
 
-return_value return_if_token(tokenizer_state* state, token_types expected)
+static return_value return_if_token(tokenizer_state* state, token_types expected)
 {
 	peeked_token p = peek_token(state);
 	if (p.token.type == expected)
@@ -444,7 +462,7 @@ return_value return_if_token(tokenizer_state* state, token_types expected)
 	return return_value::false_value;
 }
 
-return_value skip_object_if_found(tokenizer_state* state)
+static return_value skip_object_and_arries_if_found(tokenizer_state* state)
 {
 	peeked_token p = peek_token(state);
 	size_t ariety = 0;
@@ -458,12 +476,12 @@ return_value skip_object_if_found(tokenizer_state* state)
 				assert(false);
 				return return_value::error_value;
 			}
-			else if (t.type == token_types::open_curly)
+			else if (t.type == token_types::open_curly || t.type == token_types::open_bracket)
 			{
 				ariety++;
 				continue;
 			}
-			else if (t.type == token_types::close_curly)
+			else if (t.type == token_types::close_curly || t.type == token_types::closed_bracket)
 			{
 				ariety--;
 				if (ariety == 0)
@@ -484,7 +502,17 @@ return_value skip_object_if_found(tokenizer_state* state)
 			return { {}, return_value::error_value };										\
 		else if (r == return_value::true_value)												\
 			break;																			\
-		skip_object_if_found(state);														\
+		skip_object_and_arries_if_found(state);												\
+	}
+
+#define BREAK_LOOP_ON_TOKRN_OR_ERROR_STATE_DISCARD_OTHERWISE(TOKEN)							\
+	{																						\
+		return_value r = discard_next_or_return_if_token(state, TOKEN);						\
+		if (r == return_value::error_value)													\
+			return return_value::error_value;												\
+		else if (r == return_value::true_value)												\
+			break;																			\
+		skip_object_and_arries_if_found(state);												\
 	}
 
 #define BREAK_LOOP_ON_TOKRN_OR_ERROR(TOKEN)													\
@@ -496,7 +524,7 @@ return_value skip_object_if_found(tokenizer_state* state)
 			break;																			\
 	}
 
-return_value discard_next_if_token(tokenizer_state* state, token_types expected)
+static return_value discard_next_if_token(tokenizer_state* state, token_types expected)
 {
 	peeked_token p = peek_token(state);
 	if (p.token.type == expected)
@@ -559,6 +587,10 @@ return_value discard_next_if_token(tokenizer_state* state, token_types expected)
 	if (discard_next_if_token(state, TOKEN) == return_value::error_value) \
 		return { {}, return_value::error_value }
 
+#define DESCARD_IF_EXCPECTED_STATE(TOKEN) \
+	if (discard_next_if_token(state, TOKEN) == return_value::error_value) \
+		return return_value::error_value
+
 #define DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(TOKEN)						\
 	{																		\
 		auto r = discard_next_if_token(state, TOKEN);						\
@@ -568,16 +600,30 @@ return_value discard_next_if_token(tokenizer_state* state, token_types expected)
 			return { {}, return_value::false_value };						\
 	}
 
+#define DESCARD_IF_EXCPECTED_RETURN_STATE_OTHERWISE(TOKEN)					\
+	{																		\
+		auto r = discard_next_if_token(state, TOKEN);						\
+		if (r == return_value::error_value)									\
+			return return_value::error_value;								\
+		else if (r == return_value::false_value)							\
+			return return_value::false_value;								\
+	}
+
 #define ELEMENT_START \
 	for(size_t element_max_count = 0; element_max_count < MAX_TOKENS_PER_ENTITY; ++element_max_count)	\
 	{
 
 #define ELEMENT_END \
-		if (element_max_count == MAX_TOKENS_PER_ENTITY - 1)															\
+		if (element_max_count == MAX_TOKENS_PER_ENTITY - 1)												\
 			return { {}, return_value::error_value };													\
 	}
 
-std::pair<acp_vulkan::gltf_data::asset_type, return_value> parse_asset(tokenizer_state* state)
+#define ELEMENT_END_STATE \
+		if (element_max_count == MAX_TOKENS_PER_ENTITY - 1)												\
+			return return_value::error_value;															\
+	}
+
+static std::pair<acp_vulkan::gltf_data::asset_type, return_value> parse_asset(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::asset_type out{};
 
@@ -595,7 +641,7 @@ std::pair<acp_vulkan::gltf_data::asset_type, return_value> parse_asset(tokenizer
 	return { out, return_value::true_value };
 }
 
-std::pair<acp_vulkan::gltf_data::buffer_view, return_value> parse_buffer_view(tokenizer_state* state)
+static std::pair<acp_vulkan::gltf_data::buffer_view, return_value> parse_buffer_view(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::buffer_view out{};
 
@@ -626,7 +672,7 @@ std::pair<acp_vulkan::gltf_data::buffer_view, return_value> parse_buffer_view(to
 		DESCARD_IF_EXCPECTED(token_types::comma);																		\
 	}
 
-std::pair<std::vector<acp_vulkan::gltf_data::buffer_view>, return_value> parse_buffer_views(tokenizer_state* state)
+static std::pair<std::vector<acp_vulkan::gltf_data::buffer_view>, return_value> parse_buffer_views(tokenizer_state* state)
 {
 	std::vector<acp_vulkan::gltf_data::buffer_view> out{};
 
@@ -642,7 +688,7 @@ std::pair<std::vector<acp_vulkan::gltf_data::buffer_view>, return_value> parse_b
 	return { std::move(out), return_value::true_value };
 }
 
-std::pair<acp_vulkan::gltf_data::buffer, return_value> parse_buffer(tokenizer_state* state)
+static std::pair<acp_vulkan::gltf_data::buffer, return_value> parse_buffer(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::buffer out{};
 
@@ -660,7 +706,7 @@ std::pair<acp_vulkan::gltf_data::buffer, return_value> parse_buffer(tokenizer_st
 	return { std::move(out), return_value::true_value };
 }
 
-std::pair<std::vector<acp_vulkan::gltf_data::buffer>, return_value> parse_buffers(tokenizer_state* state)
+static std::pair<std::vector<acp_vulkan::gltf_data::buffer>, return_value> parse_buffers(tokenizer_state* state)
 {
 	std::vector<acp_vulkan::gltf_data::buffer> out{};
 
@@ -676,7 +722,7 @@ std::pair<std::vector<acp_vulkan::gltf_data::buffer>, return_value> parse_buffer
 	return { std::move(out), return_value::true_value };
 }
 
-std::pair<acp_vulkan::gltf_data::image, return_value> parse_image(tokenizer_state* state)
+static std::pair<acp_vulkan::gltf_data::image, return_value> parse_image(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::image out{};
 
@@ -694,7 +740,7 @@ std::pair<acp_vulkan::gltf_data::image, return_value> parse_image(tokenizer_stat
 	return { std::move(out), return_value::true_value };
 }
 
-std::pair<std::vector<acp_vulkan::gltf_data::image>, return_value> parse_images(tokenizer_state* state)
+static std::pair<std::vector<acp_vulkan::gltf_data::image>, return_value> parse_images(tokenizer_state* state)
 {
 	std::vector<acp_vulkan::gltf_data::image> out{};
 
@@ -710,8 +756,7 @@ std::pair<std::vector<acp_vulkan::gltf_data::image>, return_value> parse_images(
 	return { std::move(out), return_value::true_value };
 }
 
-
-std::pair<std::vector<float>, return_value> parse_float_array(tokenizer_state* state)
+static std::pair<std::vector<float>, return_value> parse_float_array(tokenizer_state* state)
 {
 	std::vector<float> out{};
 
@@ -734,7 +779,7 @@ std::pair<std::vector<float>, return_value> parse_float_array(tokenizer_state* s
 }
 
 template<size_t MAX_TARGETS, typename V, typename T>
-return_value try_read_float_array_property_to(tokenizer_state* state, token_types type, T target, V* found_values)
+static return_value try_read_float_array_property_to(tokenizer_state* state, token_types type, T target, V* found_values)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -759,6 +804,25 @@ return_value try_read_float_array_property_to(tokenizer_state* state, token_type
 	return return_value::false_value;
 }
 
+template<size_t MAX_TARGETS, typename V, typename T>
+static return_value try_read_float_array_property_to(tokenizer_state* state, token_types type, std::vector<T>& target, V* found_values)
+{
+	peeked_token t = peek_token(state);
+	if (t.token.type == type)
+	{
+		next_token(state);
+		if (expect(next_token(state), token_types::colon) == return_value::error_value)
+			return return_value::error_value;
+		auto value = parse_float_array(state);
+		if (value.second != return_value::true_value)
+			return return_value::error_value;
+
+		target = std::move(value.first);
+		return return_value::true_value;
+	}
+	return return_value::false_value;
+}
+
 #define TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(TOKEN, TARGET, MAX_TARGETS)											\
 	{																												\
 		return_value r = try_read_float_array_property_to<MAX_TARGETS, size_t>(state, TOKEN, TARGET, nullptr);		\
@@ -777,39 +841,157 @@ return_value try_read_float_array_property_to(tokenizer_state* state, token_type
 			continue;																						\
 	}
 
-std::pair<acp_vulkan::gltf_data::accesor, return_value> parse_accesor(tokenizer_state* state)
+static std::pair<acp_vulkan::gltf_data::accesor::sparse_type::indices_type, return_value> parse_sparse_type_indices_type(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::accesor::sparse_type::indices_type out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::bufferView, &out.buffer_view);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::byteOffset, &out.byte_offset);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::componentType, &out.component_type);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::accesor::sparse_type::values_type, return_value> parse_sparse_type_values_type(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::accesor::sparse_type::values_type out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::bufferView, &out.buffer_view);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::byteOffset, &out.byte_offset);
+	BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+		DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+template<typename T, typename F>
+static return_value try_read_subsection_to(tokenizer_state* state, token_types type, F subsection_parser, T target, bool* found_subsection)
+{
+	peeked_token t = peek_token(state);
+	if (t.token.type == type)
+	{
+		next_token(state);
+		if (expect(next_token(state), token_types::colon) == return_value::error_value)
+			return return_value::error_value;
+		auto v = subsection_parser(state);
+		if (v.second != return_value::true_value)
+		{
+			if (found_subsection)
+				*found_subsection = false;
+			return return_value::error_value;
+		}
+
+		*target = std::move(v.first);
+		if (found_subsection)
+			*found_subsection = true;
+		return return_value::true_value;
+	}
+	return return_value::false_value;
+}
+
+template<typename T, typename F>
+static return_value try_read_subsection_array_to(tokenizer_state* state, token_types type, F subsection_parser, T& target, bool* found_subsection)
+{
+	peeked_token t = peek_token(state);
+	if (t.token.type == type)
+	{
+		next_token(state);
+		if (expect(next_token(state), token_types::colon) == return_value::error_value)
+			return return_value::error_value;
+
+		DESCARD_IF_EXCPECTED_RETURN_STATE_OTHERWISE(token_types::open_bracket);
+
+		ELEMENT_START
+			auto v = subsection_parser(state);
+			if (v.second == return_value::true_value)
+			{
+				target.emplace_back(std::move(v.first));
+				if (found_subsection)
+					*found_subsection = true;
+			}
+			BREAK_LOOP_ON_TOKRN_OR_ERROR_STATE_DISCARD_OTHERWISE(token_types::closed_bracket);
+		ELEMENT_END_STATE
+
+		DESCARD_IF_EXCPECTED_STATE(token_types::closed_bracket);
+
+		return return_value::true_value;
+	}
+
+	return return_value::false_value;
+}
+
+#define TRY_READ_GLTF_SUB_SECTION_OR_REPORT_ERROR(TOKEN, TARGET, SUBSECTION_PARSER)							\
+	{																										\
+		return_value r = try_read_subsection_to(state, TOKEN, SUBSECTION_PARSER, TARGET, nullptr);			\
+		if (r == return_value::error_value)																	\
+			return { {}, return_value::error_value };														\
+		else if (r == return_value::true_value)																\
+			continue;																						\
+	}
+
+#define TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(TOKEN, TARGET, SUBSECTION_PARSER, FOUNT_SUB_SECTION)	\
+	{																												\
+		return_value r = try_read_subsection_to(state, TOKEN, SUBSECTION_PARSER, TARGET, FOUNT_SUB_SECTION);		\
+		if (r == return_value::error_value)																			\
+			return { {}, return_value::error_value };																\
+		else if (r == return_value::true_value)																		\
+			continue;																								\
+	}
+
+#define TRY_READ_GLTF_SUB_SECTION_ARRAY_OR_REPORT_ERROR(TOKEN, TARGET, SUBSECTION_PARSER)					\
+	{																										\
+		return_value r = try_read_subsection_array_to(state, TOKEN, SUBSECTION_PARSER, TARGET, nullptr);	\
+		if (r == return_value::error_value)																	\
+			return { {}, return_value::error_value };														\
+		else if (r == return_value::true_value)																\
+			continue;																						\
+	}
+
+#define TRY_READ_GLTF_SUB_SECTION_ARRAY_AND_STATE_OR_REPORT_ERROR(TOKEN, TARGET, SUBSECTION_PARSER, FOUNT_SUB_SECTION)	\
+	{																													\
+		return_value r = try_read_subsection_array_to(state, TOKEN, SUBSECTION_PARSER, TARGET, FOUNT_SUB_SECTION);		\
+		if (r == return_value::error_value)																				\
+			return { {}, return_value::error_value };																	\
+		else if (r == return_value::true_value)																			\
+			continue;																									\
+	}
+
+static std::pair<acp_vulkan::gltf_data::accesor::sparse_type, return_value> parse_sparse_type(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::accesor::sparse_type out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::count, &out.count);
+		TRY_READ_GLTF_SUB_SECTION_OR_REPORT_ERROR(token_types::indices, &out.indices, parse_sparse_type_indices_type);
+		TRY_READ_GLTF_SUB_SECTION_OR_REPORT_ERROR(token_types::values, &out.values, parse_sparse_type_values_type);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+		DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<acp_vulkan::gltf_data::accesor, return_value> parse_accesor(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::accesor out{};
 
 	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
 
-
-	/*
-	* struct accesor
-		{
-			struct sparse_type
-			{
-				uint32_t count;
-				struct indices_type
-				{
-					uint32_t buffer_view;
-					uint32_t byte_offset;
-					uint32_t component_type;
-				};
-				indices_type indices;
-				struct values_type
-				{
-					uint32_t buffer_view;
-					uint32_t byte_offset;
-				};
-				values_type values;
-			};
-			bool is_sparse;
-			sparse_type sparse;
-
-			string_view name;
-		};
-	*/
 	ELEMENT_START
 		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::bufferView, &out.buffer_view);
 		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::byteOffset, &out.byte_offset);
@@ -820,9 +1002,7 @@ std::pair<acp_vulkan::gltf_data::accesor, return_value> parse_accesor(tokenizer_
 		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
 		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::min, static_cast<float*>(out.min), sizeof(out.min) / sizeof(out.min[0]));
 		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::max, static_cast<float*>(out.max), sizeof(out.max) / sizeof(out.max[0]));
-
-		//todo(alex) : Implement sparse structure read. and the rest of the thing !
-
+		TRY_READ_GLTF_SUB_SECTION_AND_STATE_OR_REPORT_ERROR(token_types::sparse, &out.sparse, parse_sparse_type, &out.is_sparse);
 		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
 	ELEMENT_END
 
@@ -831,7 +1011,7 @@ std::pair<acp_vulkan::gltf_data::accesor, return_value> parse_accesor(tokenizer_
 	return { std::move(out), return_value::true_value };
 }
 
-std::pair<std::vector<acp_vulkan::gltf_data::accesor>, return_value> parse_accesors(tokenizer_state* state)
+static std::pair<std::vector<acp_vulkan::gltf_data::accesor>, return_value> parse_accesors(tokenizer_state* state)
 {
 	std::vector<acp_vulkan::gltf_data::accesor> out{};
 
@@ -857,6 +1037,167 @@ std::pair<std::vector<acp_vulkan::gltf_data::accesor>, return_value> parse_acces
 		found_sections.push_back(TARGET);																				\
 		break;																											\
 	}
+
+static std::pair<acp_vulkan::gltf_data::texture, return_value> parse_texture(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::texture out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::sampler, &out.sampler);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::source, &out.source);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<std::vector<acp_vulkan::gltf_data::texture>, return_value> parse_textures(tokenizer_state* state)
+{
+	std::vector<acp_vulkan::gltf_data::texture> out{};
+
+	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
+
+	ELEMENT_START
+		GLTF_ELEMENT(parse_texture);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+	ELEMENT_END
+
+	EXPECT_AND_DESCARD(token_types::closed_bracket);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static std::pair<std::vector<std::pair<acp_vulkan::gltf_data::attribute, uint32_t>>, return_value> parse_attributes(tokenizer_state* state)
+{
+	std::vector<std::pair<acp_vulkan::gltf_data::attribute, uint32_t>> out{};
+
+	EXPECT_AND_DESCARD(token_types::open_curly);
+
+	ELEMENT_START
+		peeked_token t = peek_token(state);
+		if (auto iter = tokens_to_attribute.find(t.token.type); iter != tokens_to_attribute.cend())
+		{
+			next_token(state);
+			std::pair<acp_vulkan::gltf_data::attribute, uint32_t> v{};
+			v.first = iter->second;
+			EXPECT_AND_DESCARD(token_types::colon);
+			token accessor = next_token(state);
+			if (accessor.type != token_types::is_int)
+				return { {}, return_value::error_value };
+			v.second = uint32_t(accessor.value.as_int);
+			out.push_back(v);
+		}
+		DESCARD_IF_EXCPECTED(token_types::comma);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::close_curly);
+	ELEMENT_END
+
+	EXPECT_AND_DESCARD(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+template<typename T>
+return_value try_read_attributes_property_to(tokenizer_state* state, token_types type, T& target)
+{
+	peeked_token t = peek_token(state);
+	if (t.token.type == type)
+	{
+		next_token(state);
+		if (expect(next_token(state), token_types::colon) == return_value::error_value)
+			return return_value::error_value;
+		auto value = parse_attributes(state);
+		if (value.second != return_value::true_value)
+			return return_value::error_value;
+
+		target = std::move(value.first);
+		return return_value::true_value;
+	}
+	return return_value::false_value;
+}
+
+#define TRY_READ_ATTRIBUTE_ARRAY_OR_REPORT_ERROR(TOKEN, TARGET)														\
+	{																												\
+		return_value r = try_read_attributes_property_to(state, TOKEN, TARGET);										\
+		if (r == return_value::error_value)																			\
+			return { {}, return_value::error_value };																\
+		else if (r == return_value::true_value)																		\
+			continue;																								\
+	}
+
+std::pair<acp_vulkan::gltf_data::mesh::primitive_type::target, return_value> parse_mesh_primitive_targets(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::mesh::primitive_type::target out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_ATTRIBUTE_ARRAY_OR_REPORT_ERROR(token_types::attributes, out.attributes);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+std::pair<acp_vulkan::gltf_data::mesh::primitive_type, return_value> parse_mesh_primitive(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::mesh::primitive_type out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_ATTRIBUTE_ARRAY_OR_REPORT_ERROR(token_types::attributes, out.attributes);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::indices, &out.indices);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::material, &out.material);
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::mode, &out.mode);
+		TRY_READ_GLTF_SUB_SECTION_ARRAY_OR_REPORT_ERROR(token_types::targets, out.targets, parse_mesh_primitive_targets);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+		DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+std::pair<acp_vulkan::gltf_data::mesh, return_value> parse_mesh(tokenizer_state* state)
+{
+	acp_vulkan::gltf_data::mesh out{};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_GLTF_SUB_SECTION_ARRAY_OR_REPORT_ERROR(token_types::primitives, out.primitives, parse_mesh_primitive);
+		TRY_READ_FLOAT_ARRAY_OR_REPORT_ERROR(token_types::weights, out.weights, SIZE_MAX);
+		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+std::pair<std::vector<acp_vulkan::gltf_data::mesh>, return_value> parse_meshes(tokenizer_state* state)
+{
+	std::vector<acp_vulkan::gltf_data::mesh> out{};
+
+	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
+
+	ELEMENT_START
+		GLTF_ELEMENT(parse_mesh);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+	ELEMENT_END
+
+		EXPECT_AND_DESCARD(token_types::closed_bracket);
+
+	return { std::move(out), return_value::true_value };
+}
 
 acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t data_size)
 {
@@ -890,6 +1231,10 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 			GLTF_SECTION(token_types::buffers, parse_buffers, buffers);
 			GLTF_SECTION(token_types::images, parse_images, images);
 			GLTF_SECTION(token_types::accessors, parse_accesors, accesors);
+			GLTF_SECTION(token_types::textures, parse_textures, textures);
+			GLTF_SECTION(token_types::meshes, parse_meshes, meshes);
+
+			//todo(alex) : Parse other kinds of nodes !
 		}
 
 		if (t.type == token_types::eof)
