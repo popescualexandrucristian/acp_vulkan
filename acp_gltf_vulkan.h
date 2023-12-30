@@ -11,7 +11,8 @@ namespace acp_vulkan
 			valid,
 			parsing_error,
 			missing_asset_section,
-			unable_to_read_file
+			unable_to_read_file,
+			deleted
 		} gltf_state;
 		size_t parsing_error_location;
 
@@ -50,6 +51,7 @@ namespace acp_vulkan
 			string_view uri;
 			string_view name;
 			uint32_t byte_length;
+			data_view<uint8_t> embedded_bytes;
 		};
 		data_view<buffer> buffers;
 
@@ -58,6 +60,7 @@ namespace acp_vulkan
 			string_view uri;
 			uint32_t buffer_view;
 			string_view mime_type;
+			data_view<uint8_t> embedded_bytes;
 		};
 		data_view<image> images;
 
@@ -65,10 +68,27 @@ namespace acp_vulkan
 		{
 			uint32_t buffer_view;
 			uint32_t byte_offset;
-			uint32_t component_type;
+			enum class component_type_type {
+				UNSIGNED_BYTE = 5121,
+				SHORT = 5122,
+				UNSIGNED_SHORT = 5123,
+				UNSIGNED_INT = 5125,
+				FLOAT = 5126
+			};
+			component_type_type component_type;
 			bool	 normalized;
 			uint32_t count;
-			string_view type;
+			enum class type_type
+			{
+				SCALAR,
+				VEC2,
+				VEC3,
+				VEC4,
+				MAT2,
+				MAT3,
+				MAT4
+			};
+			type_type type;
 			float max[16];
 			float min[16];
 
@@ -362,14 +382,11 @@ namespace acp_vulkan
 			string_view name;
 		};
 		data_view<animation> animations;
-
-		char* gltf_data;
 	};
 
-	//todo(alex) : Move away from vector so we can use the host_allocator for everything !
 	//todo(alex) : Parse the binary version !
-	//todo(alex) : Translate buffers and images saved in the uri, maybe add an option ?
-	gltf_data gltf_data_from_memory(const char* data, size_t data_size, bool will_own_data, VkAllocationCallbacks* host_allocator);
+	//todo(alex) : Investigate how to turn this in to Vulkan friendly data.
+	gltf_data gltf_data_from_memory(const char* data, size_t data_size, VkAllocationCallbacks* host_allocator);
 	gltf_data gltf_data_from_file(const char* path, VkAllocationCallbacks* host_allocator);
 	void gltf_data_free(gltf_data* gltf_data, VkAllocationCallbacks* host_allocator);
 };

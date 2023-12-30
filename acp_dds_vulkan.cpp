@@ -794,6 +794,7 @@ VkImageCreateInfo get_vulkan_image_create_info(DDSFile* dds)
 struct dds_file
 {
 	dds_file_data data{};
+	DDS_HEADER_DXT10 dds10_header{};
 	bool is_valid = false;
 };
 
@@ -821,6 +822,7 @@ dds_file dds_load(unsigned char* data, size_t data_size, bool will_own_data, VkA
 	if (memcmp(filesig, "DDS ", 4) != 0)
 		return {};
 
+	dds_file out{};
 	dds_file_data file{};
 
 	if (data_size - used_data_size < 124)
@@ -831,14 +833,13 @@ dds_file dds_load(unsigned char* data, size_t data_size, bool will_own_data, VkA
 	data += 124;
 	used_data_size += 124;
 
-	DDS_HEADER_DXT10 dds10_header = {};
 	isDx10 = memcmp(&file.ddspf.dwFourCC, "DX10", 4) == 0 ? 1 : 0;
 	if (isDx10) {
 
 		if (data_size - used_data_size < sizeof(DDS_HEADER_DXT10))
 			return {};
 
-		file.ddsHeaderDx10 = &dds10_header;
+		file.ddsHeaderDx10 = &out.dds10_header;
 		memcpy(file.ddsHeaderDx10, data, sizeof(DDS_HEADER_DXT10));
 		data += sizeof(DDS_HEADER_DXT10);
 		used_data_size += sizeof(DDS_HEADER_DXT10);
@@ -872,7 +873,9 @@ dds_file dds_load(unsigned char* data, size_t data_size, bool will_own_data, VkA
 	data += file.dwBufferSize;
 	used_data_size += file.dwBufferSize;
 
-	return { file, true };
+	out.data = file;
+	out.is_valid = true;
+	return out;
 }
 
 void get_surface_info
