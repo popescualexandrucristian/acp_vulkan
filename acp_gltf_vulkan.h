@@ -1,7 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <inttypes.h>
-#include <vector>
 
 namespace acp_vulkan
 {
@@ -16,11 +15,21 @@ namespace acp_vulkan
 		} gltf_state;
 		size_t parsing_error_location;
 
-		struct string_view
+		template<typename T>
+		struct data_view
 		{
-			const char* data;
-			size_t data_length;
+			T* data{ nullptr };
+			size_t data_length{ 0 };
 		};
+
+		template<typename A, typename B>
+		struct pair
+		{
+			A first;
+			B second;
+		};
+
+		typedef data_view<const char> string_view;
 
 		struct asset_type
 		{
@@ -34,7 +43,7 @@ namespace acp_vulkan
 			uint32_t byte_offset;
 			uint32_t byte_length;
 		};
-		std::vector<buffer_view> buffer_views;
+		data_view<buffer_view> buffer_views;
 
 		struct buffer
 		{
@@ -42,7 +51,7 @@ namespace acp_vulkan
 			string_view name;
 			uint32_t byte_length;
 		};
-		std::vector<buffer> buffers;
+		data_view<buffer> buffers;
 
 		struct image
 		{
@@ -50,7 +59,7 @@ namespace acp_vulkan
 			uint32_t buffer_view;
 			string_view mime_type;
 		};
-		std::vector<image> images;
+		data_view<image> images;
 
 		struct accesor
 		{
@@ -85,7 +94,7 @@ namespace acp_vulkan
 
 			string_view name;
 		};
-		std::vector<accesor> accesors;
+		data_view<accesor> accesors;
 
 		struct texture
 		{
@@ -93,7 +102,7 @@ namespace acp_vulkan
 			uint32_t source;
 			string_view name;
 		};
-		std::vector<texture> textures;
+		data_view<texture> textures;
 
 		enum class attribute {
 			TEXCOORD_0,
@@ -155,21 +164,21 @@ namespace acp_vulkan
 			};
 			struct primitive_type
 			{
-				std::vector<std::pair<attribute, uint32_t>> attributes;
+				data_view<pair<attribute, uint32_t>> attributes;
 				uint32_t indices;
 				uint32_t material;
 				mode mode{ mode::TRIANGLES };
 				struct target
 				{
-					std::vector<std::pair<attribute, uint32_t>> attributes;
+					data_view<pair<attribute, uint32_t>> attributes;
 				};
-				std::vector<target> targets;
+				data_view<target> targets;
 			};
-			std::vector<primitive_type> primitives;
-			std::vector<float> weights;
+			data_view<primitive_type> primitives;
+			data_view<float> weights;
 			string_view name;
 		};
-		std::vector<mesh> meshes;
+		data_view<mesh> meshes;
 
 		struct material
 		{
@@ -221,13 +230,13 @@ namespace acp_vulkan
 			bool double_sided{ false };
 			string_view name;
 		};
-		std::vector<material> materials;
+		data_view<material> materials;
 
 		struct node
 		{
 			bool has_camera{ false };
 			uint32_t camera{ UINT32_MAX };
-			std::vector<uint32_t> children;
+			data_view<uint32_t> children;
 			bool has_skin{ false };
 			uint32_t skin{ UINT32_MAX };
 			bool has_mesh{ false };
@@ -240,16 +249,16 @@ namespace acp_vulkan
 			float scale[3]{ 1.0f, 1.0f, 1.0f };
 			bool has_translation{ false };
 			float translation[3]{ 0.0f, 0.0f, 0.0f };
-			std::vector<float> weights;
+			data_view<float> weights;
 			string_view name;
 		};
-		std::vector<node> nodes;
+		data_view<node> nodes;
 
 		struct scene {
-			std::vector<uint32_t> nodes;
+			data_view<uint32_t> nodes;
 			string_view name;
 		};
-		std::vector<scene> scenes;
+		data_view<scene> scenes;
 		uint32_t default_scene{ UINT32_MAX };
 		bool has_defautl_scene{ false };
 
@@ -277,7 +286,7 @@ namespace acp_vulkan
 			wrap_type wrap_t{ wrap_type::REPEAT };
 			string_view name;
 		};
-		std::vector<sampler> samplers;
+		data_view<sampler> samplers;
 
 		struct skin
 		{
@@ -285,10 +294,10 @@ namespace acp_vulkan
 			uint32_t inverse_bind_matrices{ UINT32_MAX };
 			bool has_skeleton{ false };
 			uint32_t skeleton{ UINT32_MAX };
-			std::vector<uint32_t> joints;
+			data_view<uint32_t> joints;
 			string_view name;
 		};
-		std::vector<skin> skins;
+		data_view<skin> skins;
 
 		struct camera
 		{
@@ -318,7 +327,7 @@ namespace acp_vulkan
 			perspective_properties_type perspective;
 			string_view name;
 		};
-		std::vector<camera> cameras;
+		data_view<camera> cameras;
 
 		struct animation
 		{
@@ -337,7 +346,7 @@ namespace acp_vulkan
 				};
 				target_type target;
 			};
-			std::vector<channel> channels;
+			data_view<channel> channels;
 			struct sampler {
 				uint32_t input;
 				enum class interpolation_type
@@ -349,10 +358,10 @@ namespace acp_vulkan
 				interpolation_type interpolation{ interpolation_type::LINEAR };
 				uint32_t output;
 			};
-			std::vector<sampler> samplers;
+			data_view<sampler> samplers;
 			string_view name;
 		};
-		std::vector<animation> animations;
+		data_view<animation> animations;
 
 		char* gltf_data;
 	};

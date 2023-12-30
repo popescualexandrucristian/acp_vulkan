@@ -6,6 +6,111 @@
 #include <stdio.h>
 #include <map>
 
+template<typename A, typename B>
+using pair = acp_vulkan::gltf_data::pair<A,B>;
+
+template<typename T>
+using data_view = acp_vulkan::gltf_data::data_view<T>;
+
+template<typename T>
+struct temp_data_view
+{
+	T* data{ nullptr };
+	size_t data_length{ 0 };
+	size_t data_capacity{ 0 };
+	VkAllocationCallbacks* host_allocator{ nullptr };
+
+	void free()
+	{
+		if (host_allocator)
+			host_allocator->pfnFree(host_allocator->pUserData, data.data);
+		else
+			delete[] data.data;
+
+		data.data = nullptr;
+		data.data_capacity = 0;
+		data.data_length = 0;
+	}
+
+	void from_target(temp_data_view&& other)
+	{
+		free();
+		data = other.data;
+		data_capacity = other.data_capacity;
+		data_length = other.data_length;
+
+		other.data = nullptr;
+		other.data_capacity = 0;
+		other.data_length = 0;
+	}
+
+	temp_data_view& operator=(temp_data_view&& other)
+	{
+		from_target(std::move(other));
+	}
+	temp_data_view(temp_data_view&& other)
+	{
+		from_target(std::move(other));
+	}
+	~temp_data_view()
+	{
+		free();
+	}
+
+	static void emplace_back(T&& value)
+	{
+		if (data_capacity == 0)
+		{
+			data_capacity = 16;
+			assert(data_length == 0);
+		}
+
+		T* old_data_ptr = nullptr;
+		size_t old_data_capacity = 0;
+		if (data_capacity == data_length)
+		{
+			old_data_ptr = data;
+			old_data_capacity = data_capacity;
+			data = nullptr;
+			data_capacity *= 2;
+		}
+
+		if (!data)
+		{
+			data = host_allocator ?
+				reinterpret_cast<T*>(host_allocator->pfnAllocation(host_allocator->pUserData, data_capacity, alignof(T), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT))
+				: new T[data_capacity];
+		}
+
+		if (old_data_ptr)
+		{
+			for (size_t ii = 0; ii < old_data_capacity; ++ii)
+			{
+				data[ii] = old_data_ptr[ii];
+			}
+			if (host_allocator)
+				host_allocator->pfnFree(host_allocator->pUserData, old_data_ptr);
+			else
+				delete[] old_data_ptr;
+		}
+
+		data[data.data_length++] = std::move(value);
+	}
+
+	data_view<T>&& to()
+	{
+		data_view<T> out;
+		out.data = data;
+		out.data_length = data_length;
+		data = nullptr;
+		data_length = 0;
+		data_capacity = 0;
+		return out;
+	}
+};
+
+using string_view = acp_vulkan::gltf_data::string_view;
+
 #define MAX_TOKENS_PER_ENTITY (1024 * 1024)
 
 
@@ -237,6 +342,7 @@ struct tokenizer_state {
 	const char* data;
 	size_t data_size;
 	size_t next_char;
+	VkAllocationCallbacks* host_allocator;
 };
 
 struct peeked_token
@@ -691,7 +797,7 @@ static return_value discard_next_if_token(tokenizer_state* state, token_types ex
 			return return_value::error_value;															\
 	}
 
-static std::pair<acp_vulkan::gltf_data::asset_type, return_value> parse_asset(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::asset_type, return_value> parse_asset(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::asset_type out{};
 
@@ -709,7 +815,7 @@ static std::pair<acp_vulkan::gltf_data::asset_type, return_value> parse_asset(to
 	return { out, return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::buffer_view, return_value> parse_buffer_view(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::buffer_view, return_value> parse_buffer_view(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::buffer_view out{};
 
@@ -734,15 +840,15 @@ static std::pair<acp_vulkan::gltf_data::buffer_view, return_value> parse_buffer_
 			return { {}, return_value::error_value };																	\
 		else if (asset_data.second == return_value::true_value)															\
 		{																												\
-			out.emplace_back(std::move(asset_data.first));																\
+			data_view_emplace_back(out, std::move(asset_data.first), state->host_allocator);							\
 			continue;																									\
 		}																												\
 		DESCARD_IF_EXCPECTED(token_types::comma);																		\
 	}
 
-static std::pair<std::vector<acp_vulkan::gltf_data::buffer_view>, return_value> parse_buffer_views(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::buffer_view>, return_value> parse_buffer_views(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::buffer_view> out{};
+	data_view<acp_vulkan::gltf_data::buffer_view> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -756,7 +862,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::buffer_view>, return_value> 
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::buffer, return_value> parse_buffer(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::buffer, return_value> parse_buffer(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::buffer out{};
 
@@ -774,9 +880,9 @@ static std::pair<acp_vulkan::gltf_data::buffer, return_value> parse_buffer(token
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::buffer>, return_value> parse_buffers(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::buffer>, return_value> parse_buffers(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::buffer> out{};
+	data_view<acp_vulkan::gltf_data::buffer> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -790,7 +896,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::buffer>, return_value> parse
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::image, return_value> parse_image(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::image, return_value> parse_image(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::image out{};
 
@@ -808,9 +914,9 @@ static std::pair<acp_vulkan::gltf_data::image, return_value> parse_image(tokeniz
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::image>, return_value> parse_images(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::image>, return_value> parse_images(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::image> out{};
+	data_view<acp_vulkan::gltf_data::image> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -824,9 +930,9 @@ static std::pair<std::vector<acp_vulkan::gltf_data::image>, return_value> parse_
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<float>, return_value> parse_float_array(tokenizer_state* state)
+static pair<data_view<float>, return_value> parse_float_array(tokenizer_state* state)
 {
-	std::vector<float> out{};
+	data_view<float> out{};
 
 	EXPECT_AND_DESCARD(token_types::open_bracket);
 
@@ -834,12 +940,12 @@ static std::pair<std::vector<float>, return_value> parse_float_array(tokenizer_s
 		peeked_token t = peek_token(state);
 		if (t.token.type == token_types::is_float)
 		{
-			out.push_back(float(t.token.value.as_real));
+			data_view_emplace_back(out, std::move(float(t.token.value.as_real)), state->host_allocator);
 			next_token(state);
 		}
 		else if (t.token.type == token_types::is_int)
 		{
-			out.push_back(float(t.token.value.as_int));
+			data_view_emplace_back(out, std::move(float(t.token.value.as_int)), state->host_allocator);
 			next_token(state);
 		}
 		DESCARD_IF_EXCPECTED(token_types::comma);
@@ -866,19 +972,20 @@ static return_value try_read_float_array_property_to(tokenizer_state* state, tok
 
 		for (size_t ii = 0; ii < MAX_TARGETS; ++ii)
 		{
-			if (value.first.size() <= ii)
+			if (value.first.data_length <= ii)
 				break;
-			target[ii] = value.first[ii];
+			target[ii] = value.first.data[ii];
 			if (found_values)
 				found_values++;
 		}
+		data_view_free(value.first, state->host_allocator);
 		return return_value::true_value;
 	}
 	return return_value::false_value;
 }
 
 template<size_t MAX_TARGETS, typename V, typename T>
-static return_value try_read_float_array_property_to(tokenizer_state* state, token_types type, std::vector<T>& target, V* found_values)
+static return_value try_read_float_array_property_to(tokenizer_state* state, token_types type, data_view<T>& target, V* found_values)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -890,7 +997,7 @@ static return_value try_read_float_array_property_to(tokenizer_state* state, tok
 		if (value.second != return_value::true_value)
 			return return_value::error_value;
 
-		target = std::move(value.first);
+		set_to_other(target, value.first, state->host_allocator);
 		return return_value::true_value;
 	}
 	return return_value::false_value;
@@ -914,25 +1021,25 @@ static return_value try_read_float_array_property_to(tokenizer_state* state, tok
 			continue;																						\
 	}
 
-static std::pair<std::vector<uint32_t>, return_value> parse_int_array(tokenizer_state* state)
+static pair<data_view<uint32_t>, return_value> parse_int_array(tokenizer_state* state)
 {
-	std::vector<uint32_t> out{};
+	data_view<uint32_t> out{};
 
 	EXPECT_AND_DESCARD(token_types::open_bracket);
 
 	ELEMENT_START
 		peeked_token t = peek_token(state);
-	if (t.token.type == token_types::is_int)
-	{
-		out.push_back(uint32_t(t.token.value.as_int));
-		next_token(state);
-	}
+		if (t.token.type == token_types::is_int)
+		{
+			data_view_emplace_back(out, std::move(uint32_t(t.token.value.as_int)), state->host_allocator);
+			next_token(state);
+		}
 
-	DESCARD_IF_EXCPECTED(token_types::comma);
-	BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+		DESCARD_IF_EXCPECTED(token_types::comma);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
 	ELEMENT_END
 
-		EXPECT_AND_DESCARD(token_types::closed_bracket);
+	EXPECT_AND_DESCARD(token_types::closed_bracket);
 
 	return { std::move(out), return_value::true_value };
 }
@@ -954,19 +1061,20 @@ static return_value try_read_int_array_property_to(tokenizer_state* state, token
 
 		for (size_t ii = 0; ii < MAX_TARGETS; ++ii)
 		{
-			if (value.first.size() <= ii)
+			if (value.first.data_length <= ii)
 				break;
 			target[ii] = value.first[ii];
 			if (found_values)
 				found_values++;
 		}
+		data_view_free(value.first, state->host_allocator);
 		return return_value::true_value;
 	}
 	return return_value::false_value;
 }
 
  template<size_t MAX_TARGETS, typename V, typename T>
-static return_value try_read_int_array_property_to(tokenizer_state* state, token_types type, std::vector<T>& target, V* found_values)
+static return_value try_read_int_array_property_to(tokenizer_state* state, token_types type, data_view<T>& target, V* found_values)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -978,7 +1086,7 @@ static return_value try_read_int_array_property_to(tokenizer_state* state, token
 		if (value.second != return_value::true_value)
 			return return_value::error_value;
 
-		target = std::move(value.first);
+		set_to_other(target, value.first, state->host_allocator);
 		return return_value::true_value;
 	}
 	return return_value::false_value;
@@ -1002,7 +1110,7 @@ static return_value try_read_int_array_property_to(tokenizer_state* state, token
 			continue;																						\
 	}
 
-static std::pair<acp_vulkan::gltf_data::accesor::sparse_type::indices_type, return_value> parse_sparse_type_indices_type(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::accesor::sparse_type::indices_type, return_value> parse_sparse_type_indices_type(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::accesor::sparse_type::indices_type out{};
 
@@ -1020,7 +1128,7 @@ static std::pair<acp_vulkan::gltf_data::accesor::sparse_type::indices_type, retu
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::accesor::sparse_type::values_type, return_value> parse_sparse_type_values_type(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::accesor::sparse_type::values_type, return_value> parse_sparse_type_values_type(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::accesor::sparse_type::values_type out{};
 
@@ -1063,7 +1171,7 @@ static return_value try_read_subsection_to(tokenizer_state* state, token_types t
 }
 
 template<typename T, typename F>
-static return_value try_read_subsection_array_to(tokenizer_state* state, token_types type, F subsection_parser, T& target, bool* found_subsection)
+static return_value try_read_subsection_array_to(tokenizer_state* state, token_types type, F subsection_parser, data_view<T>& target, bool* found_subsection)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -1078,7 +1186,7 @@ static return_value try_read_subsection_array_to(tokenizer_state* state, token_t
 			auto v = subsection_parser(state);
 			if (v.second == return_value::true_value)
 			{
-				target.emplace_back(std::move(v.first));
+				data_view_emplace_back(target, std::move(v.first), state->host_allocator);
 				if (found_subsection)
 					*found_subsection = true;
 			}
@@ -1129,7 +1237,7 @@ static return_value try_read_subsection_array_to(tokenizer_state* state, token_t
 			continue;																									\
 	}
 
-static std::pair<acp_vulkan::gltf_data::accesor::sparse_type, return_value> parse_sparse_type(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::accesor::sparse_type, return_value> parse_sparse_type(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::accesor::sparse_type out{};
 
@@ -1147,7 +1255,7 @@ static std::pair<acp_vulkan::gltf_data::accesor::sparse_type, return_value> pars
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::accesor, return_value> parse_accesor(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::accesor, return_value> parse_accesor(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::accesor out{};
 
@@ -1172,9 +1280,9 @@ static std::pair<acp_vulkan::gltf_data::accesor, return_value> parse_accesor(tok
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::accesor>, return_value> parse_accesors(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::accesor>, return_value> parse_accesors(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::accesor> out{};
+	data_view<acp_vulkan::gltf_data::accesor> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -1195,11 +1303,11 @@ static std::pair<std::vector<acp_vulkan::gltf_data::accesor>, return_value> pars
 		if (asset_data.second == return_value::error_value)																\
 			return { .gltf_state = acp_vulkan::gltf_data::parsing_error, .parsing_error_location = state.next_char };	\
 		out.DESTINSTION = std::move(asset_data.first);																	\
-		found_sections.push_back(TARGET);																				\
+		data_view_emplace_back(found_sections, TARGET, state.host_allocator );											\
 		break;																											\
 	}
 
-static std::pair<acp_vulkan::gltf_data::texture, return_value> parse_texture(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::texture, return_value> parse_texture(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::texture out{};
 
@@ -1217,9 +1325,9 @@ static std::pair<acp_vulkan::gltf_data::texture, return_value> parse_texture(tok
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::texture>, return_value> parse_textures(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::texture>, return_value> parse_textures(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::texture> out{};
+	data_view<acp_vulkan::gltf_data::texture> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -1233,9 +1341,9 @@ static std::pair<std::vector<acp_vulkan::gltf_data::texture>, return_value> pars
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<std::pair<acp_vulkan::gltf_data::attribute, uint32_t>>, return_value> parse_attributes(tokenizer_state* state)
+static pair<data_view<pair<acp_vulkan::gltf_data::attribute, uint32_t>>, return_value> parse_attributes(tokenizer_state* state)
 {
-	std::vector<std::pair<acp_vulkan::gltf_data::attribute, uint32_t>> out{};
+	data_view<pair<acp_vulkan::gltf_data::attribute, uint32_t>> out{};
 
 	EXPECT_AND_DESCARD(token_types::open_curly);
 
@@ -1244,14 +1352,14 @@ static std::pair<std::vector<std::pair<acp_vulkan::gltf_data::attribute, uint32_
 		if (auto iter = tokens_to_attribute.find(t.token.type); iter != tokens_to_attribute.cend())
 		{
 			next_token(state);
-			std::pair<acp_vulkan::gltf_data::attribute, uint32_t> v{};
+			pair<acp_vulkan::gltf_data::attribute, uint32_t> v{};
 			v.first = iter->second;
 			EXPECT_AND_DESCARD(token_types::colon);
 			token accessor = next_token(state);
 			if (accessor.type != token_types::is_int)
 				return { {}, return_value::error_value };
 			v.second = uint32_t(accessor.value.as_int);
-			out.push_back(v);
+			data_view_emplace_back(out, std::move(v), state->host_allocator);
 		}
 		DESCARD_IF_EXCPECTED(token_types::comma);
 		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::close_curly);
@@ -1263,7 +1371,7 @@ static std::pair<std::vector<std::pair<acp_vulkan::gltf_data::attribute, uint32_
 }
 
 template<typename T>
-static return_value try_read_attributes_property_to(tokenizer_state* state, token_types type, T& target)
+static return_value try_read_attributes_property_to(tokenizer_state* state, token_types type, data_view<T>& target)
 {
 	peeked_token t = peek_token(state);
 	if (t.token.type == type)
@@ -1275,7 +1383,7 @@ static return_value try_read_attributes_property_to(tokenizer_state* state, toke
 		if (value.second != return_value::true_value)
 			return return_value::error_value;
 
-		target = std::move(value.first);
+		set_to_other(target, value.first, state->host_allocator);
 		return return_value::true_value;
 	}
 	return return_value::false_value;
@@ -1290,7 +1398,7 @@ static return_value try_read_attributes_property_to(tokenizer_state* state, toke
 			continue;																								\
 	}
 
-static std::pair<acp_vulkan::gltf_data::mesh::primitive_type::target, return_value> parse_mesh_primitive_targets(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::mesh::primitive_type::target, return_value> parse_mesh_primitive_targets(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::mesh::primitive_type::target out{};
 
@@ -1306,7 +1414,7 @@ static std::pair<acp_vulkan::gltf_data::mesh::primitive_type::target, return_val
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::mesh::primitive_type, return_value> parse_mesh_primitive(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::mesh::primitive_type, return_value> parse_mesh_primitive(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::mesh::primitive_type out{};
 
@@ -1326,7 +1434,7 @@ static std::pair<acp_vulkan::gltf_data::mesh::primitive_type, return_value> pars
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::mesh, return_value> parse_mesh(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::mesh, return_value> parse_mesh(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::mesh out{};
 
@@ -1344,9 +1452,9 @@ static std::pair<acp_vulkan::gltf_data::mesh, return_value> parse_mesh(tokenizer
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::mesh>, return_value> parse_meshes(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::mesh>, return_value> parse_meshes(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::mesh> out{};
+	data_view<acp_vulkan::gltf_data::mesh> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -1360,7 +1468,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::mesh>, return_value> parse_m
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::material::texture_info, return_value> parse_material_texture_info(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::material::texture_info, return_value> parse_material_texture_info(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::material::texture_info out{};
 
@@ -1377,7 +1485,7 @@ static std::pair<acp_vulkan::gltf_data::material::texture_info, return_value> pa
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::material::normal_texture_info, return_value> parse_material_normal_texture_info(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::material::normal_texture_info, return_value> parse_material_normal_texture_info(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::material::normal_texture_info out{};
 
@@ -1395,7 +1503,7 @@ static std::pair<acp_vulkan::gltf_data::material::normal_texture_info, return_va
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::material::occlusion_texture_info, return_value> parse_material_occlusion_texture_info(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::material::occlusion_texture_info, return_value> parse_material_occlusion_texture_info(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::material::occlusion_texture_info out{};
 
@@ -1413,7 +1521,7 @@ static std::pair<acp_vulkan::gltf_data::material::occlusion_texture_info, return
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::material::pbr_metallic_roughness_type, return_value> parse_material_pbr_metallic_roughness(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::material::pbr_metallic_roughness_type, return_value> parse_material_pbr_metallic_roughness(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::material::pbr_metallic_roughness_type out{};
 
@@ -1463,7 +1571,7 @@ static return_value try_read_alpha_mode_property_to(tokenizer_state* state, toke
 			continue;																						\
 	}
 
-static std::pair<acp_vulkan::gltf_data::material, return_value> parse_material(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::material, return_value> parse_material(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::material out{};
 
@@ -1487,9 +1595,9 @@ static std::pair<acp_vulkan::gltf_data::material, return_value> parse_material(t
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::material>, return_value> parse_materials(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::material>, return_value> parse_materials(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::material> out{};
+	data_view<acp_vulkan::gltf_data::material> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -1503,7 +1611,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::material>, return_value> par
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::node, return_value> parse_node(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::node, return_value> parse_node(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::node out{};
 
@@ -1551,9 +1659,9 @@ static std::pair<acp_vulkan::gltf_data::node, return_value> parse_node(tokenizer
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::node>, return_value> parse_nodes(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::node>, return_value> parse_nodes(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::node> out{};
+	data_view<acp_vulkan::gltf_data::node> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -1567,7 +1675,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::node>, return_value> parse_n
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::scene, return_value> parse_scene(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::scene, return_value> parse_scene(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::scene out{};
 
@@ -1584,9 +1692,9 @@ static std::pair<acp_vulkan::gltf_data::scene, return_value> parse_scene(tokeniz
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::scene>, return_value> parse_scenes(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::scene>, return_value> parse_scenes(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::scene> out{};
+	data_view<acp_vulkan::gltf_data::scene> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -1601,7 +1709,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::scene>, return_value> parse_
 }
 
 
-static std::pair<acp_vulkan::gltf_data::sampler, return_value> parse_sampler(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::sampler, return_value> parse_sampler(tokenizer_state* state)
 {
 	struct pars_sampler
 	{
@@ -1638,9 +1746,9 @@ static std::pair<acp_vulkan::gltf_data::sampler, return_value> parse_sampler(tok
 	return { std::move(final_out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::sampler>, return_value> parse_samplers(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::sampler>, return_value> parse_samplers(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::sampler> out{};
+	data_view<acp_vulkan::gltf_data::sampler> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -1654,7 +1762,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::sampler>, return_value> pars
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::skin, return_value> parse_skin(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::skin, return_value> parse_skin(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::skin out{};
 
@@ -1679,9 +1787,9 @@ static std::pair<acp_vulkan::gltf_data::skin, return_value> parse_skin(tokenizer
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::skin>, return_value> parse_skins(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::skin>, return_value> parse_skins(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::skin> out{};
+	data_view<acp_vulkan::gltf_data::skin> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -1695,7 +1803,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::skin>, return_value> parse_s
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::camera::orthographic_properties_type, return_value> parse_camera_orthographic(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::camera::orthographic_properties_type, return_value> parse_camera_orthographic(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::camera::orthographic_properties_type out{};
 
@@ -1714,7 +1822,7 @@ static std::pair<acp_vulkan::gltf_data::camera::orthographic_properties_type, re
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::camera::perspective_properties_type, return_value> parse_camera_perspective(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::camera::perspective_properties_type, return_value> parse_camera_perspective(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::camera::perspective_properties_type out{};
 
@@ -1733,7 +1841,7 @@ static std::pair<acp_vulkan::gltf_data::camera::perspective_properties_type, ret
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::camera, return_value> parse_camera(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::camera, return_value> parse_camera(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::camera out{};
 
@@ -1773,9 +1881,9 @@ static std::pair<acp_vulkan::gltf_data::camera, return_value> parse_camera(token
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::camera>, return_value> parse_cameras(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::camera>, return_value> parse_cameras(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::camera> out{};
+	data_view<acp_vulkan::gltf_data::camera> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
@@ -1789,7 +1897,7 @@ static std::pair<std::vector<acp_vulkan::gltf_data::camera>, return_value> parse
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::animation::channel::target_type, return_value> parse_animation_channel_target(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::animation::channel::target_type, return_value> parse_animation_channel_target(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::animation::channel::target_type out{};
 
@@ -1831,7 +1939,7 @@ static std::pair<acp_vulkan::gltf_data::animation::channel::target_type, return_
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::animation::channel, return_value> parse_animation_channel(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::animation::channel, return_value> parse_animation_channel(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::animation::channel out{};
 
@@ -1848,7 +1956,7 @@ static std::pair<acp_vulkan::gltf_data::animation::channel, return_value> parse_
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::animation::sampler, return_value> parse_animation_sampler(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::animation::sampler, return_value> parse_animation_sampler(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::animation::sampler out{};
 
@@ -1885,7 +1993,7 @@ static std::pair<acp_vulkan::gltf_data::animation::sampler, return_value> parse_
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<acp_vulkan::gltf_data::animation, return_value> parse_animation(tokenizer_state* state)
+static pair<acp_vulkan::gltf_data::animation, return_value> parse_animation(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::animation out{};
 
@@ -1903,15 +2011,15 @@ static std::pair<acp_vulkan::gltf_data::animation, return_value> parse_animation
 	return { std::move(out), return_value::true_value };
 }
 
-static std::pair<std::vector<acp_vulkan::gltf_data::animation>, return_value> parse_animations(tokenizer_state* state)
+static pair<data_view<acp_vulkan::gltf_data::animation>, return_value> parse_animations(tokenizer_state* state)
 {
-	std::vector<acp_vulkan::gltf_data::animation> out{};
+	data_view<acp_vulkan::gltf_data::animation> out{};
 
 	EXPECT_AND_DESCARD(token_types::colon, token_types::open_bracket);
 
 	ELEMENT_START
 		GLTF_ELEMENT(parse_animation);
-	BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR(token_types::closed_bracket);
 	ELEMENT_END
 
 	EXPECT_AND_DESCARD(token_types::closed_bracket);
@@ -1937,14 +2045,15 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 
 	tokenizer_state state{
 		.data = data,
-		.data_size = data_size
+		.data_size = data_size,
+		.host_allocator = host_allocator
 	};
 
 	if (expect(next_token(&state), token_types::open_curly) == return_value::error_value)
 		return {.gltf_state = acp_vulkan::gltf_data::parsing_error, .parsing_error_location = state.next_char};
 
-	std::vector<token_types> found_sections;
-	std::pair<token_types, acp_vulkan::gltf_data::gltf_state_type> mandatory_sections[] = {
+	data_view<token_types> found_sections{};
+	pair<token_types, acp_vulkan::gltf_data::gltf_state_type> mandatory_sections[] = {
 		{token_types::asset, acp_vulkan::gltf_data::missing_asset_section }
 	};
 	while (true)
@@ -1982,7 +2091,7 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 					return { .gltf_state = acp_vulkan::gltf_data::parsing_error, .parsing_error_location = state.next_char };
 				out.default_scene = uint32_t(default_scene.value.as_int);
 				out.has_defautl_scene = true;
-				found_sections.push_back(token_types::scene);
+				data_view_emplace_back(found_sections, token_types::scene, state.host_allocator);
 				break;
 			}
 			default:
@@ -1995,12 +2104,23 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 
 	for (auto ii : mandatory_sections)
 	{
-		if (std::find(found_sections.cbegin(), found_sections.cend(), ii.first) == found_sections.cend())
+		bool found_section = false;
+		for (size_t jj = 0; jj < found_sections.data_length; ++jj)
+		{
+			if (found_sections.data[jj] == ii.first)
+			{
+				found_section = true;
+				break;
+			}
+		}
+		if (!found_section)
 		{
 			return { .gltf_state = ii.second, .parsing_error_location = 0 };
 			assert(false);
 		}
 	}
+
+	data_view_free(found_sections, state.host_allocator);
 
 	if (will_own_data)
 		out.gltf_data = data_copy;
