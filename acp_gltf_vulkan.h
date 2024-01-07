@@ -396,13 +396,11 @@ namespace acp_vulkan
 		data_view<uint8_t> embedded_buffer;
 	};
 
-	//todo(alex) : Parse the binary version !
 	//todo(alex) : Investigate how to turn this in to Vulkan friendly data.
 	gltf_data gltf_data_from_memory(const char* data, size_t data_size, VkAllocationCallbacks* host_allocator);
 	gltf_data binary_gltf_data_from_memory(const char* data, size_t data_size, VkAllocationCallbacks* host_allocator);
 
 	gltf_data gltf_data_from_file(const char* path, VkAllocationCallbacks* host_allocator);
-
 
 	void gltf_data_free(gltf_data* gltf_data, VkAllocationCallbacks* host_allocator);
 };
