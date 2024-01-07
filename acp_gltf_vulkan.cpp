@@ -301,7 +301,9 @@ static string_view copy(string_view from, VkAllocationCallbacks* host_allocator)
 	X(path) \
 	X(input) \
 	X(output) \
-	X(interpolation)
+	X(interpolation) \
+	X(extensions) \
+	X(MSFT_texture_dds)
 
 #define TO_ENUM_VALUE1(x, y) x,
 #define TO_ENUM_VALUE2(x) x,
@@ -1417,6 +1419,38 @@ static void delete_texture_data(acp_vulkan::gltf_data::texture* in, VkAllocation
 	free_gltf_buffer(in->name, host_allocator);
 }
 
+static pair<uint32_t, return_value> parse_texture_extensions_msft(tokenizer_state* state)
+{
+	uint32_t out{ UINT32_MAX };
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::source, &out);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
+static pair<uint32_t, return_value> parse_texture_extensions(tokenizer_state* state)
+{
+	uint32_t out{UINT32_MAX};
+
+	DESCARD_IF_EXCPECTED_RETURN_OTHERWISE(token_types::open_curly);
+
+	ELEMENT_START
+		TRY_READ_GLTF_SUB_SECTION_OR_REPORT_ERROR(token_types::MSFT_texture_dds, &out, parse_texture_extensions_msft);
+		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
+	ELEMENT_END
+
+	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	return { std::move(out), return_value::true_value };
+}
+
 static pair<acp_vulkan::gltf_data::texture, return_value> parse_texture(tokenizer_state* state)
 {
 	acp_vulkan::gltf_data::texture out{};
@@ -1428,10 +1462,20 @@ static pair<acp_vulkan::gltf_data::texture, return_value> parse_texture(tokenize
 		TRY_READ_STRING_OR_REPORT_ERROR(token_types::name, &out.name);
 		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::sampler, &out.sampler);
 		TRY_READ_INT_VALUE_OR_REPORT_ERROR(token_types::source, &out.source);
+		TRY_READ_GLTF_SUB_SECTION_OR_REPORT_ERROR(token_types::extensions, &out.MSFT_source, parse_texture_extensions);
 		BREAK_LOOP_ON_TOKRN_OR_ERROR_DISCARD_OTHERWISE(token_types::close_curly);
 	ELEMENT_END
 
 	DESCARD_IF_EXCPECTED(token_types::close_curly);
+
+	if (out.sampler != UINT32_MAX)
+		out.has_sampler = true;
+
+	if (out.source != UINT32_MAX)
+		out.has_source = true;
+
+	if (out.MSFT_source != UINT32_MAX)
+		out.has_MSFT_source = true;
 
 	delete_on_failure.drop();
 	return { std::move(out), return_value::true_value };

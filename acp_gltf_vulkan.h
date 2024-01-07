@@ -120,9 +120,13 @@ namespace acp_vulkan
 
 		struct texture
 		{
-			uint32_t sampler;
-			uint32_t source;
+			bool has_sampler;
+			uint32_t sampler{ UINT32_MAX };
+			bool has_source;
+			uint32_t source{ UINT32_MAX };
 			string_view name;
+			bool has_MSFT_source;
+			uint32_t MSFT_source{ UINT32_MAX };
 		};
 		data_view<texture> textures;
 
