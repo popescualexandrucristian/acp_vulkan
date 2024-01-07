@@ -2356,11 +2356,106 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 	return out;
 }
 
+struct gltf_binary_header
+{
+	uint32_t magic;
+	uint32_t version;
+	uint32_t length;
+};
+
+struct gltf_binary_chunk_header
+{
+	enum class type
+	{
+		JSON = 0x4E4F534A,
+		BIN = 0x004E4942
+	};
+	uint32_t chunk_length;
+	type chunk_type;
+};
+
+gltf_binary_header binary_gltf_header(const char* data, size_t data_size)
+{
+	if (data_size < sizeof(gltf_binary_header))
+		return {};
+
+	gltf_binary_header out{};
+	memcpy(&out, data, sizeof(gltf_binary_header));
+
+	if (out.magic == 0x46546C67 /*glTF*/)
+		return out;
+
+	return {};
+}
+
+bool is_binary_gltf(const char* data, size_t data_size)
+{
+	gltf_binary_header test = binary_gltf_header(data, data_size);
+	return test.version == 2 && test.length != 0 && test.magic == 0x46546C67;
+}
+
+acp_vulkan::gltf_data acp_vulkan::binary_gltf_data_from_memory(const char* data, size_t data_size, VkAllocationCallbacks* host_allocator)
+{
+	gltf_binary_header header = binary_gltf_header(data, data_size);
+	if(header.version != 2)
+		return { .gltf_state = acp_vulkan::gltf_data::invalid_binary_data_version, .parsing_error_location = 0 };
+
+	if (header.magic != 0x46546C67)
+		return { .gltf_state = acp_vulkan::gltf_data::invalid_binary_data_magic, .parsing_error_location = 0 };
+
+	if (header.length == 0)
+		return { .gltf_state = acp_vulkan::gltf_data::invalid_binary_data_with_zero_length, .parsing_error_location = 0 };
+
+	data += sizeof(gltf_binary_header);
+
+	uint8_t* data_buffer = nullptr;
+	size_t data_buffer_size = 0;
+	acp_vulkan::gltf_data out_data{};
+
+	for (size_t ii = 0; ii < header.length;)
+	{
+		if (ii + sizeof(gltf_binary_chunk_header) >= header.length)
+			break;
+		gltf_binary_chunk_header chunk{};
+		memcpy(&chunk, data + ii, sizeof(gltf_binary_chunk_header));
+		ii += sizeof(gltf_binary_chunk_header);
+
+		if (header.length - ii < chunk.chunk_length)
+			break;
+
+		if (chunk.chunk_type == gltf_binary_chunk_header::type::JSON)
+		{
+			out_data = gltf_data_from_memory(data + ii, chunk.chunk_length, host_allocator);
+		}
+		else if (chunk.chunk_type == gltf_binary_chunk_header::type::BIN)
+		{
+			uint8_t* chunk_data = host_allocator ?
+				reinterpret_cast<uint8_t*>(host_allocator->pfnAllocation(host_allocator->pUserData, chunk.chunk_length, sizeof(uint8_t), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT))
+				: new uint8_t[chunk.chunk_length];
+
+			memcpy(chunk_data, data + ii, chunk.chunk_length);
+
+			data_buffer = chunk_data;
+			data_buffer_size = chunk.chunk_length;
+		}
+
+		ii += chunk.chunk_length;
+	}
+
+	out_data.embedded_buffer.data = data_buffer;
+	out_data.embedded_buffer.data_length = data_buffer_size;
+
+	if (out_data.gltf_state != gltf_data::valid)
+		free_gltf_buffer(out_data.embedded_buffer, host_allocator);
+
+	return out_data;
+}
+
 acp_vulkan::gltf_data acp_vulkan::gltf_data_from_file(const char* path, VkAllocationCallbacks* host_allocator)
 {
 	FILE* gltf_bytes = fopen(path, "rb");
 	if (!gltf_bytes)
-		return {};
+		return { .gltf_state = acp_vulkan::gltf_data::unable_to_open_file, .parsing_error_location = 0 };
 
 	fseek(gltf_bytes, 0, SEEK_END);
 	long gltf_size = ftell(gltf_bytes);
@@ -2373,7 +2468,7 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_file(const char* path, VkAlloca
 	if (!gltf_data)
 	{
 		fclose(gltf_bytes);
-		return {.gltf_state = acp_vulkan::gltf_data::gltf_state_type::unable_to_read_file, .parsing_error_location = 0 };
+		return { .gltf_state = acp_vulkan::gltf_data::gltf_state_type::unable_to_read_file, .parsing_error_location = 0 };
 	}
 
 	size_t bytes_to_read = gltf_size;
@@ -2396,7 +2491,9 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_file(const char* path, VkAlloca
 		return {};
 	}
 
-	acp_vulkan::gltf_data out = acp_vulkan::gltf_data_from_memory(gltf_data, gltf_size, host_allocator);
+	acp_vulkan::gltf_data out = is_binary_gltf(gltf_data, gltf_size) ?
+		acp_vulkan::binary_gltf_data_from_memory(gltf_data, gltf_size, host_allocator) :
+		acp_vulkan::gltf_data_from_memory(gltf_data, gltf_size, host_allocator);
 
 	if (host_allocator)
 		host_allocator->pfnFree(host_allocator->pUserData, gltf_data);
@@ -2474,4 +2571,6 @@ void acp_vulkan::gltf_data_free(gltf_data* gltf_data, VkAllocationCallbacks* hos
 	for (size_t ii = 0; ii < gltf_data->animations.data_length; ++ii)
 		delete_animation_data(&gltf_data->animations.data[ii], host_allocator);
 	free_gltf_buffer(gltf_data->animations, host_allocator);
+
+	free_gltf_buffer(gltf_data->embedded_buffer, host_allocator);
 }

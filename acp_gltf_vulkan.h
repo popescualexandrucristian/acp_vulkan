@@ -12,6 +12,10 @@ namespace acp_vulkan
 			parsing_error,
 			missing_asset_section,
 			unable_to_read_file,
+			unable_to_open_file,
+			invalid_binary_data_magic,
+			invalid_binary_data_version,
+			invalid_binary_data_with_zero_length,
 			deleted
 		} gltf_state;
 		size_t parsing_error_location;
@@ -388,11 +392,17 @@ namespace acp_vulkan
 			string_view name;
 		};
 		data_view<animation> animations;
+
+		data_view<uint8_t> embedded_buffer;
 	};
 
 	//todo(alex) : Parse the binary version !
 	//todo(alex) : Investigate how to turn this in to Vulkan friendly data.
 	gltf_data gltf_data_from_memory(const char* data, size_t data_size, VkAllocationCallbacks* host_allocator);
+	gltf_data binary_gltf_data_from_memory(const char* data, size_t data_size, VkAllocationCallbacks* host_allocator);
+
 	gltf_data gltf_data_from_file(const char* path, VkAllocationCallbacks* host_allocator);
+
+
 	void gltf_data_free(gltf_data* gltf_data, VkAllocationCallbacks* host_allocator);
 };

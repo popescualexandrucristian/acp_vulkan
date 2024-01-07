@@ -152,7 +152,6 @@ Utility that parses dds files or data to generate Vulkan ready image data.
 	    unsigned char* dss_buffer_data{ nullptr };
 	};
 ```
-
 Load DDS data from file or from memory.
 Note :
  * Parameters:
@@ -183,6 +182,22 @@ Note:
 * A build system is not provided as one is not necessary, just include the .cpp and the .h files.
 * Might move to a header only mode in the future.
 * I am a fan of Ortodox C++ so please don't create pull requests with things that are not necessary such as encapsulation directives, proper classes or other c++ 'features'.
+
+
+### acp_gltf_vulkan.h
+Utility that parses gltf plain text files, binary files, text data or binary data to generate Vulkan ready data.
+
+```
+	gltf_data gltf_data_from_memory(const char* data, size_t data_size, VkAllocationCallbacks* host_allocator);
+	gltf_data binary_gltf_data_from_memory(const char* data, size_t data_size, VkAllocationCallbacks* host_allocator);
+
+	gltf_data gltf_data_from_file(const char* path, VkAllocationCallbacks* host_allocator);
+
+	void gltf_data_free(gltf_data* gltf_data, VkAllocationCallbacks* host_allocator);
+```
+Note:
+* This library only parses the gltf data in to a c/c++ compatible format for now, in the future it will also offer better interpolation with Vulkan.
+*This library also has support for the MSFT_texture_dds extension.
 
 ### acp_context/*
 
