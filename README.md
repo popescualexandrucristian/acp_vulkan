@@ -197,7 +197,7 @@ Utility that parses gltf plain text files, binary files, text data or binary dat
 ```
 Note:
 * This library only parses the gltf data in to a c/c++ compatible format for now, in the future it will also offer better interpolation with Vulkan.
-*This library also has support for the MSFT_texture_dds extension.
+* This library also has support for the MSFT_texture_dds extension.
 
 ### acp_context/*
 
