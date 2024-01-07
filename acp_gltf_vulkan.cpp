@@ -940,6 +940,7 @@ static void delete_buffer_data(acp_vulkan::gltf_data::buffer* in, VkAllocationCa
 	free_gltf_buffer(in->name, host_allocator);
 	free_gltf_buffer(in->uri, host_allocator);
 	free_gltf_buffer(in->embedded_bytes, host_allocator);
+	free_gltf_buffer(in->embedded_mime, host_allocator);
 }
 
 static pair<acp_vulkan::gltf_data::buffer, return_value> parse_buffer(tokenizer_state* state)
@@ -967,6 +968,7 @@ static void delete_image_data(acp_vulkan::gltf_data::image* in, VkAllocationCall
 	free_gltf_buffer(in->uri, host_allocator);
 	free_gltf_buffer(in->mime_type, host_allocator);
 	free_gltf_buffer(in->embedded_bytes, host_allocator);
+	free_gltf_buffer(in->embedded_mime, host_allocator);
 }
 
 static pair<acp_vulkan::gltf_data::image, return_value> parse_image(tokenizer_state* state)
@@ -2154,20 +2156,43 @@ data_view<uint8_t> base64_decode(string_view input)
 	return decoded_data.to();
 };
 
-#define TRANSLATE_EMBEDDED_URI(SET, MAGIC_LEN, MAGIC)																										\
-	for (size_t ii = 0; ii < SET.data_length; ++ii)																											\
-	{																																						\
-		if (!SET.data[ii].uri.data)																															\
-			continue;																																		\
-																																							\
-	if (SET.data[ii].uri.data_length < MAGIC_LEN)																											\
-		continue;																																			\
-																																							\
-	if (strncmp(SET.data[ii].uri.data, MAGIC, MAGIC_LEN) == 0)																								\
-	{																																						\
-		string_view base_64_encoded_data{ .data = SET.data[ii].uri.data + MAGIC_LEN, .data_length = SET.data[ii].uri.data_length - MAGIC_LEN };				\
-		SET.data[ii].embedded_bytes = base64_decode(base_64_encoded_data);																					\
-	}																																						\
+static std::pair<string_view, string_view> get_embedded_data(string_view uri)
+{
+	static constexpr const char base_64_data_magic_start[] = "data:";
+	static constexpr size_t base_64_data_magic_len_start = 5;
+
+	static constexpr const char base_64_data_magic_end[] = ";base64,";
+	static constexpr size_t base_64_data_magic_len_end = 7;
+
+	if (!uri.data)
+		return {};
+
+	if (uri.data_length < base_64_data_magic_len_start)
+		return {};
+
+	if (strncmp(uri.data, base_64_data_magic_start, base_64_data_magic_len_start) == 0)
+	{
+		const char* data = uri.data + base_64_data_magic_len_start;
+		size_t data_length = uri.data_length - base_64_data_magic_len_start;
+		for (size_t jj = 0; jj < data_length; ++jj)
+		{
+			if (data[jj] != ';')
+				continue;
+
+			if ((data_length - jj) > base_64_data_magic_len_end)
+			{
+				if (strncmp(data + jj, base_64_data_magic_end, base_64_data_magic_len_end) == 0)
+				{
+					const char* base_64_encoded_data_start = data + jj + base_64_data_magic_len_end;
+					string_view base_64_encoded_data{ .data = data + jj + base_64_data_magic_len_end + 1, .data_length = data_length - jj - base_64_data_magic_len_end - 1 };
+					string_view mime{ .data = data , .data_length = uri.data_length - base_64_data_magic_len_start - base_64_encoded_data.data_length - base_64_data_magic_len_end - 1 };
+					return { mime, base_64_encoded_data };
+				}
+			}
+		}
+	}
+
+	return {};
 }
 
 acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t data_size, VkAllocationCallbacks* host_allocator)
@@ -2260,24 +2285,28 @@ acp_vulkan::gltf_data acp_vulkan::gltf_data_from_memory(const char* data, size_t
 			assert(false);
 		}
 	}
-	
-	constexpr const char base_64_data_magic[] = "data:application/octet-stream;base64,";
-	size_t base_64_data_magic_len = sizeof(base_64_data_magic) - 1;
 
-	constexpr const char base_64_png_magic[] = "data:image/png;base64,";
-	size_t base_64_png_magic_len = sizeof(base_64_png_magic) - 1;
+	for (size_t ii = 0; ii < out.buffers.data_length; ++ii)
+	{
+		auto embaded_data = get_embedded_data(out.buffers.data[ii].uri);
+		if (embaded_data.first.data && embaded_data.second.data)
+		{
+			out.buffers.data[ii].embedded_bytes = base64_decode(embaded_data.second);
+			if (out.buffers.data[ii].embedded_bytes.data && out.buffers.data[ii].embedded_bytes.data_length != 0)
+				out.buffers.data[ii].embedded_mime = copy(embaded_data.first, host_allocator);
+		}
+	}
 
-	constexpr const char base_64_jpg_magic[] = "data:image/jpg;base64,";
-	size_t base_64_jpg_magic_len = sizeof(base_64_jpg_magic) - 1;
-
-	constexpr const char base_64_dds_magic[] = "data:image/dds;base64,";
-	size_t base_64_dds_magic_len = sizeof(base_64_dds_magic) - 1;
-
-	TRANSLATE_EMBEDDED_URI(out.buffers, base_64_data_magic_len, base_64_data_magic);
-	TRANSLATE_EMBEDDED_URI(out.images, base_64_png_magic_len, base_64_png_magic);
-	TRANSLATE_EMBEDDED_URI(out.images, base_64_jpg_magic_len, base_64_jpg_magic);
-	TRANSLATE_EMBEDDED_URI(out.images, base_64_dds_magic_len, base_64_dds_magic);
-
+	for (size_t ii = 0; ii < out.images.data_length; ++ii)
+	{
+		auto embaded_data = get_embedded_data(out.images.data[ii].uri);
+		if (embaded_data.first.data && embaded_data.second.data)
+		{
+			out.images.data[ii].embedded_bytes = base64_decode(embaded_data.second);
+			if (out.images.data[ii].embedded_bytes.data && out.images.data[ii].embedded_bytes.data_length != 0)
+				out.images.data[ii].embedded_mime = copy(embaded_data.first, host_allocator);
+		}
+	}
 	out.gltf_state = acp_vulkan::gltf_data::gltf_state_type::valid;
 
 	return out;

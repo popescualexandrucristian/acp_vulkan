@@ -52,6 +52,7 @@ namespace acp_vulkan
 			string_view name;
 			uint32_t byte_length;
 			data_view<uint8_t> embedded_bytes;
+			string_view embedded_mime;
 		};
 		data_view<buffer> buffers;
 
@@ -61,6 +62,7 @@ namespace acp_vulkan
 			uint32_t buffer_view;
 			string_view mime_type;
 			data_view<uint8_t> embedded_bytes;
+			string_view embedded_mime;
 		};
 		data_view<image> images;
 
