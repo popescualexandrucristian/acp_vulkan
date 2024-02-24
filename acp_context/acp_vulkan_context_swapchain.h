@@ -11,7 +11,7 @@ namespace acp_vulkan
 		VkSwapchainKHR swapchain;
 		std::vector<VkImage> images;
 		std::vector<VkImageView> views;
-		std::vector<acp_vulkan::image_data> depth_images;
+		std::vector<std::pair<acp_vulkan::image_data, bool>> depth_images;
 		std::vector<VkImageView> depth_views;
 		uint32_t width, height;
 		bool vsync;

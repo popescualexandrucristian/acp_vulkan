@@ -72,8 +72,8 @@ static void destroy_image_views(acp_vulkan::renderer_context* context, acp_vulka
 
 static void destroy_depth_images(acp_vulkan::renderer_context* context, acp_vulkan::swapchain* swapchain)
 {
-	for (const acp_vulkan::image_data& i : swapchain->depth_images)
-		acp_vulkan::image_destroy(context, i);
+	for (const auto& i : swapchain->depth_images)
+		acp_vulkan::image_destroy(context, i.first);
 }
 
 
@@ -87,20 +87,20 @@ std::vector<VkImageView> create_image_views(acp_vulkan::renderer_context* contex
 	return out;
 }
 
-std::vector<VkImageView> create_depth_image_views(acp_vulkan::renderer_context* context, const std::vector<acp_vulkan::image_data>& images)
+std::vector<VkImageView> create_depth_image_views(acp_vulkan::renderer_context* context, const std::vector<std::pair<acp_vulkan::image_data, bool>>& images)
 {
 	std::vector<VkImageView> out;
 	for (uint32_t i = 0; i < images.size(); ++i)
-		out.push_back(image_view_create(context, images[i].image, context->depth_format, 0, 1, VK_IMAGE_ASPECT_DEPTH_BIT, "depth_image_views"));
+		out.push_back(image_view_create(context, images[i].first.image, context->depth_format, 0, 1, VK_IMAGE_ASPECT_DEPTH_BIT, "depth_image_views"));
 
 	return out;
 }
 
-std::vector<acp_vulkan::image_data> create_depth_images(acp_vulkan::renderer_context* context, acp_vulkan::swapchain* swapchain, size_t image_count)
+std::vector<std::pair<acp_vulkan::image_data, bool>> create_depth_images(acp_vulkan::renderer_context* context, acp_vulkan::swapchain* swapchain, size_t image_count)
 {
-	std::vector<acp_vulkan::image_data> out;
+	std::vector<std::pair<acp_vulkan::image_data, bool>> out;
 	for (size_t i = 0; i < image_count; ++i)
-		out.push_back(acp_vulkan::image_create(context, swapchain->width, swapchain->height, 1, context->depth_format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, "depth_images"));
+		out.push_back({ acp_vulkan::image_create(context, swapchain->width, swapchain->height, 1, context->depth_format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, "depth_images"), false });
 
 	return out;
 }

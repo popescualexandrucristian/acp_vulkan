@@ -451,6 +451,8 @@ bool acp_vulkan::renderer_resize(acp_vulkan::renderer_context* context, uint32_t
 	if (width == 0 || height == 0)
 	{
 		context->is_minimized = true;
+		context->swapchain->width = 0;
+		context->swapchain->height = 0;
 		return true;
 	}
 
@@ -493,7 +495,7 @@ bool acp_vulkan::renderer_update(acp_vulkan::renderer_context* context, double d
 
 	VkRenderingAttachmentInfo color_attachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 	color_attachment.imageView = context->swapchain->views[context->next_image_index];
-	color_attachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+	color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
@@ -523,15 +525,60 @@ void acp_vulkan::renderer_start_main_pass(VkCommandBuffer command_buffer, render
 	pass_info.colorAttachmentCount = 1;
 	pass_info.pColorAttachments = &color_attachment;
 
+	VkImageMemoryBarrier2 render_begin_bariers[2] = {};
+
+	//color_barreir
+	render_begin_bariers[0] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+	render_begin_bariers[0].pNext = nullptr;
+	render_begin_bariers[0].srcStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+	render_begin_bariers[0].srcAccessMask = 0;
+	render_begin_bariers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	render_begin_bariers[0].dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+	render_begin_bariers[0].dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+	render_begin_bariers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	render_begin_bariers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	render_begin_bariers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	render_begin_bariers[0].image = context->swapchain->images[current_frame];
+	render_begin_bariers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	render_begin_bariers[0].subresourceRange.baseMipLevel = 0;
+	render_begin_bariers[0].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+	render_begin_bariers[0].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
 	if (context->depth_state)
 	{
 		pass_info.pDepthAttachment = context->depth_state ? &depth_attachment : nullptr;
-		VkImageMemoryBarrier2 depth_barreir = acp_vulkan::image_barrier(context->swapchain->depth_images[current_frame].image,
-			VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, 0,
-			VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS);
 
-		acp_vulkan::push_pipeline_barrier(command_buffer, 0, 0, nullptr, 1, &depth_barreir);
+
+		if (!context->swapchain->depth_images[current_frame].second)
+		{
+			//depth_barreir
+			render_begin_bariers[1] = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+			render_begin_bariers[1].pNext = nullptr;
+			render_begin_bariers[1].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+			render_begin_bariers[1].srcAccessMask = VK_ACCESS_2_NONE;
+			render_begin_bariers[1].dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+			render_begin_bariers[1].dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			render_begin_bariers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			render_begin_bariers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			render_begin_bariers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			render_begin_bariers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			render_begin_bariers[1].image = context->swapchain->depth_images[current_frame].first.image;
+			render_begin_bariers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+			render_begin_bariers[1].subresourceRange.baseMipLevel = 0;
+			render_begin_bariers[1].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+			render_begin_bariers[1].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+			acp_vulkan::push_pipeline_barrier(command_buffer, 0, 0, nullptr, 2, render_begin_bariers);
+			context->swapchain->depth_images[current_frame].second = true;
+		}
+		else
+		{
+			acp_vulkan::push_pipeline_barrier(command_buffer, 0, 0, nullptr, 1, render_begin_bariers);
+		}
+	}
+	else
+	{
+		acp_vulkan::push_pipeline_barrier(command_buffer, 0, 0, nullptr, 1, render_begin_bariers);
 	}
 	vkCmdBeginRendering(command_buffer, &pass_info);
 }
@@ -557,10 +604,21 @@ void acp_vulkan::renderer_end_main_pass(VkCommandBuffer command_buffer, acp_vulk
 
 	vkCmdEndRendering(command_buffer);
 
-	VkImageMemoryBarrier2 present_color_barreir = acp_vulkan::image_barrier(context->swapchain->images[current_frame],
-		VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, VK_IMAGE_LAYOUT_UNDEFINED,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS);
+	VkImageMemoryBarrier2 present_color_barreir = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+
+	present_color_barreir.image = context->swapchain->images[current_frame];
+	present_color_barreir.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+	present_color_barreir.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+	present_color_barreir.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	present_color_barreir.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	present_color_barreir.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	present_color_barreir.dstAccessMask = VK_ACCESS_2_NONE;
+	present_color_barreir.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	present_color_barreir.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	present_color_barreir.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	present_color_barreir.subresourceRange.baseMipLevel = 0;
+	present_color_barreir.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+	present_color_barreir.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
 	acp_vulkan::push_pipeline_barrier(command_buffer, 0, 0, nullptr, 1, &present_color_barreir);
 
@@ -568,36 +626,55 @@ void acp_vulkan::renderer_end_main_pass(VkCommandBuffer command_buffer, acp_vulk
 
 	//submit
 
-	VkSubmitInfo submit = {};
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	VkSubmitInfo2 submit = {};
+
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
 	submit.pNext = nullptr;
 
-	VkPipelineStageFlags waitStagesWithCompute[] = { VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-
 	acp_vulkan::compute_frame_sync& compute_sync = context->compute_frame_syncs[current_frame];
-	VkSemaphore wait_semaphores[2] = {sync.present_semaphore, compute_sync.compute_semaphore};
+
+	VkSemaphoreSubmitInfo wait_semaphore_infos[2] = {}; 
+	wait_semaphore_infos[0] = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+	wait_semaphore_infos[0].deviceIndex = 0;
+	wait_semaphore_infos[0].pNext = nullptr;
+	wait_semaphore_infos[0].semaphore = sync.present_semaphore;
+	wait_semaphore_infos[0].stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+	wait_semaphore_infos[0].value = 1;
+	submit.pWaitSemaphoreInfos = wait_semaphore_infos;
 	if (wait_for_compute)
 	{
-		submit.waitSemaphoreCount = 2;
-		submit.pWaitSemaphores = wait_semaphores;
-		submit.pWaitDstStageMask = waitStagesWithCompute;
+		wait_semaphore_infos[1] = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+		wait_semaphore_infos[1].deviceIndex = 0;
+		wait_semaphore_infos[1].pNext = nullptr;
+		wait_semaphore_infos[1].semaphore = compute_sync.compute_semaphore;
+		wait_semaphore_infos[1].stageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+		wait_semaphore_infos[1].value = 1;
+
+		submit.waitSemaphoreInfoCount = 2;
 	}
 	else
 	{
-		submit.waitSemaphoreCount = 1;
-		submit.pWaitSemaphores = &sync.present_semaphore;
-		submit.pWaitDstStageMask = &waitStage;
+		submit.waitSemaphoreInfoCount = 1;
 	}
 
-	submit.signalSemaphoreCount = 1;
-	submit.pSignalSemaphores = &sync.render_semaphore;
+	VkSemaphoreSubmitInfo signal_semaphore_info = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+	signal_semaphore_info.deviceIndex = 0;
+	signal_semaphore_info.pNext = nullptr;
+	signal_semaphore_info.semaphore = sync.render_semaphore;
+	signal_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+	signal_semaphore_info.value = 1;
 
-	submit.commandBufferCount = 1;
-	submit.pCommandBuffers = &command_buffer;
+	submit.pSignalSemaphoreInfos = &signal_semaphore_info;
+	submit.signalSemaphoreInfoCount = 1;
 
-	ACP_VK_CHECK(vkQueueSubmit(context->graphics_queue, 1, &submit, sync.render_fence), context);
+	VkCommandBufferSubmitInfo command_buffer_submit_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+	command_buffer_submit_info.pNext = nullptr;
+	command_buffer_submit_info.commandBuffer = command_buffer;
+	command_buffer_submit_info.deviceMask = 0;
+	submit.pCommandBufferInfos = &command_buffer_submit_info;
+	submit.commandBufferInfoCount = 1;
+
+	ACP_VK_CHECK(vkQueueSubmit2(context->graphics_queue, 1, &submit, sync.render_fence), context);
 
 	//present
 
