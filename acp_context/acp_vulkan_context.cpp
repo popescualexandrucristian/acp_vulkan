@@ -589,12 +589,26 @@ void acp_vulkan::renderer_end_main_compute_pass(VkCommandBuffer command_buffer, 
 	acp_vulkan::compute_frame_sync& sync = context->compute_frame_syncs[current_frame];
 	vkResetFences(context->logical_device, 1, &sync.compute_fence);
 
-	VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
-	submit_info.commandBufferCount = 1;
-	submit_info.pCommandBuffers = &command_buffer;
-	submit_info.pSignalSemaphores = &sync.compute_semaphore;
-	submit_info.signalSemaphoreCount = 1;
-	vkQueueSubmit(context->compute_queue, 1, &submit_info, sync.compute_fence);
+	VkSubmitInfo2 submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+
+	VkSemaphoreSubmitInfo signal_semaphore_info = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+	signal_semaphore_info.deviceIndex = 0;
+	signal_semaphore_info.pNext = nullptr;
+	signal_semaphore_info.semaphore = sync.compute_semaphore;
+	signal_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+	signal_semaphore_info.value = 1;
+
+	submit_info.pSignalSemaphoreInfos = &signal_semaphore_info;
+	submit_info.signalSemaphoreInfoCount = 1;
+
+	VkCommandBufferSubmitInfo command_buffer_submit_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+	command_buffer_submit_info.pNext = nullptr;
+	command_buffer_submit_info.commandBuffer = command_buffer;
+	command_buffer_submit_info.deviceMask = 0;
+	submit_info.pCommandBufferInfos = &command_buffer_submit_info;
+	submit_info.commandBufferInfoCount = 1;
+
+	vkQueueSubmit2(context->compute_queue, 1, &submit_info, sync.compute_fence);
 }
 
 void acp_vulkan::renderer_end_main_pass(VkCommandBuffer command_buffer, acp_vulkan::renderer_context* context, bool wait_for_compute)
